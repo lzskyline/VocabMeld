@@ -683,7 +683,7 @@
 
 ## 规则：
 1. 选择约 ${aiTargetCount} 个词汇（实际返回数量可以根据文本内容灵活调整，但不要超过 ${maxReplacements * 2} 个）
-2. 不要替换：专有名词、人名、地名、品牌名、数字、代码、URL、已经是目标语言的词、小于5个字符的英文单词
+2. 不要翻译：域名、地址、缩写、人名、地名、产品名、数字、代码、URL、已经是目标语言的词
 3. 优先选择：有学习价值的词汇、不同难度级别的词汇
 4. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
 5. 翻译倾向：结合上下文，夹杂起来也能容易被理解，尽量只翻译成最合适的词汇，而不是多个含义。
@@ -1483,13 +1483,6 @@ ${uncached.join(', ')}
       setTimeout(() => processPage(), 1000);
     }
     
-    // Initialized successfully
-    if (false) console.log('[VocabMeld] Initialized successfully, config:', {
-      autoProcess: config.autoProcess,
-      enabled: config.enabled,
-      hasApiKey: !!config.apiKey,
-      difficultyLevel: config.difficultyLevel
-    });
   }
 
   // 启动

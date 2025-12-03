@@ -25,78 +25,40 @@ class ApiService {
   }
 
   /**
-   * 测试 API 连接
-   * @param {string} endpoint - API 端点
-   * @param {string} apiKey - API 密钥
-   * @param {string} model - 模型名称
-   * @returns {Promise<{ success: boolean, message: string }>}
-   */
-  async testConnection(endpoint, apiKey, model) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            { role: 'user', content: 'Say "OK" if you can read this.' }
-          ],
-          max_tokens: 10
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.choices && data.choices[0]) {
-        return { success: true, message: '连接成功！' };
-      }
-      
-      throw new Error('Invalid response format');
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  }
-
-  /**
    * 构建翻译 prompt
    * @param {string} filteredText - 已过滤的文本（只包含未缓存词汇）
    * @param {string} originalText - 原始文本（用于位置映射）
    * @param {object} config - 配置
+   * @param {number} aiTargetCount - AI目标词汇数量（可选）
+   * @param {number} maxReplacements - 最大替换数量（可选）
    * @returns {string}
    */
-  buildPrompt(filteredText, originalText, config) {
+  buildPrompt(filteredText, originalText, config, aiTargetCount = 15, maxReplacements = 8) {
     const { nativeLanguage, targetLanguage } = config;
 
     // 判断翻译方向
     const isNativeText = this.detectLanguage(originalText) === nativeLanguage;
-    const fromLang = isNativeText ? nativeLanguage : targetLanguage;
-    const toLang = isNativeText ? targetLanguage : nativeLanguage;
+    const sourceLang = isNativeText ? nativeLanguage : targetLanguage;
+    const targetLang = isNativeText ? targetLanguage : nativeLanguage;
 
     return `你是一个语言学习助手。请分析以下文本，选择适合学习的词汇进行翻译。
 
 ## 规则：
-1. 选择 15-20 个左右有学习价值的词汇
-2. 避免替换：专有名词、人名、地名、品牌名、数字、代码、URL、已经是目标语言的词、小于5个字符的英文单词
-3. 优先选择：常用词汇、有学习价值的词汇、不同难度级别的词汇
-4. 翻译方向：从 ${fromLang} 翻译到 ${toLang}
+1. 选择约 ${aiTargetCount} 个词汇（实际返回数量可以根据文本内容灵活调整，但不要超过 ${maxReplacements * 2} 个）
+2. 不要翻译：域名、地址、缩写、人名、地名、产品名、数字、代码、URL、已经是目标语言的词
+3. 优先选择：有学习价值的词汇、不同难度级别的词汇
+4. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
 5. 翻译倾向：结合上下文，夹杂起来也能容易被理解，尽量只翻译成最合适的词汇，而不是多个含义。
 
 ## CEFR等级从简单到复杂依次为：A1-C2
 
 ## 输出格式：
 返回 JSON 数组，每个元素包含：
-- original: 原词（在文本中出现的形式）
+- original: 原词
 - translation: 翻译结果
-- phonetic: 学习语言(${targetLanguage})的音标/发音（如英语用 IPA，中文用拼音，日语用假名）
+- phonetic: 学习语言(${targetLanguage})的音标/发音
 - difficulty: CEFR 难度等级 (A1/A2/B1/B2/C1/C2)，请谨慎评估
-- position: 在文本中的起始位置（字符索引）
+- position: 在文本中的起始位置
 
 ## 文本：
 ${filteredText}
@@ -217,7 +179,9 @@ ${filteredText}
     }
 
     // 调用 API
-    const prompt = this.buildPrompt(filteredText, text, config);
+    const maxReplacements = INTENSITY_CONFIG[config.intensity]?.maxPerParagraph || 8;
+    const aiTargetCount = Math.max(maxReplacements, Math.ceil(maxReplacements * 1.5));
+    const prompt = this.buildPrompt(filteredText, text, config, aiTargetCount, maxReplacements);
     
     try {
       const response = await fetch(config.apiEndpoint, {
@@ -376,41 +340,6 @@ ${filteredText}
           translation: data.translation,
           phonetic: data.phonetic,
           difficulty: data.difficulty,
-          fromCache: true
-        });
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * 格式化缓存结果（兼容旧接口）
-   * @param {string} text - 原文本
-   * @param {Map} cached - 缓存命中的词汇
-   * @param {object} config - 配置
-   * @returns {Array}
-   */
-  formatCachedResults(text, cached, config) {
-    const results = [];
-
-    for (const [word, data] of cached) {
-      // 检查难度是否符合
-      if (!isDifficultyCompatible(data.difficulty, config.difficultyLevel)) {
-        continue;
-      }
-
-      // 查找词汇在文本中的位置
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      const match = regex.exec(text);
-
-      if (match) {
-        results.push({
-          original: match[0],
-          translation: data.translation,
-          phonetic: data.phonetic,
-          difficulty: data.difficulty,
-          position: match.index,
           fromCache: true
         });
       }

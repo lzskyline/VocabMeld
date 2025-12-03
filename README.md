@@ -315,7 +315,6 @@ VocabMeld/
 │       ├── api-service.js  # API 服务
 │       ├── cache-service.js # 缓存服务
 │       ├── content-segmenter.js # 内容分段
-│       ├── processing-service.js # 处理服务
 │       └── text-replacer.js # 文本替换
 ├── manifest.json           # Chrome 扩展配置
 ├── options.html            # 设置页面
