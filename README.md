@@ -305,9 +305,8 @@ VocabMeld/
 │   ├── options.css         # 设置页面样式
 │   └── popup.css           # 弹出窗口样式
 ├── icons/                  # 图标文件
-│   ├── icon.svg
-│   └── generate_icons.html # 图标生成工具
-├── js/                     # JavaScript 文件 (3,609 行)
+│   └── icon.svg
+├── js/                     # JavaScript 文件
 │   ├── background.js       # 后台脚本
 │   ├── content.js          # 内容脚本 (核心逻辑)
 │   ├── options.js          # 设置页面脚本
@@ -316,7 +315,6 @@ VocabMeld/
 │   │   ├── config.js       # 配置管理
 │   │   └── storage.js      # 存储服务
 │   └── services/           # 服务模块
-│       ├── api-service.js  # API 服务
 │       ├── cache-service.js # 缓存服务
 │       ├── content-segmenter.js # 内容分段
 │       └── text-replacer.js # 文本替换
@@ -387,6 +385,34 @@ function isDifficultyCompatible(wordDifficulty, userDifficulty) {
 ### 本地开发
 1. 修改代码后，在 `chrome://extensions/` 页面点击刷新按钮
 2. 或使用扩展开发工具的热重载功能
+
+---
+
+## 隐私政策
+
+VocabMeld 尊重您的隐私。以下是我们的数据处理说明：
+
+### 数据收集
+- **本地存储**：所有用户数据（设置、已学会词汇、需记忆词汇、缓存）均存储在您的浏览器本地，使用 Chrome 的 storage API
+- **不收集个人信息**：我们不收集、不存储、不传输任何个人身份信息
+
+### 数据传输
+- **API 请求**：仅在翻译功能使用时，将网页文本片段发送到您配置的 AI 服务（如 OpenAI、DeepSeek 等）
+- **您控制 API**：所有 API 配置由您自行提供，我们不提供也不访问任何 API 密钥
+- **无第三方追踪**：插件不包含任何分析、追踪或广告代码
+
+### 权限说明
+- **storage**：用于保存您的设置和学习数据
+- **activeTab**：用于获取当前标签页信息
+- **scripting**：用于在网页中注入翻译功能
+- **contextMenus**：用于提供右键菜单功能
+- **tts**：用于单词发音功能
+- **host_permissions (all_urls)**：用于在所有网站上提供翻译服务
+
+### 数据安全
+- 所有数据存储在本地，不会上传到任何服务器
+- API 密钥使用 Chrome 安全存储机制保存
+- 您可以随时在设置页面导出、删除所有数据
 
 ---
 
