@@ -225,6 +225,12 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  margin-bottom: 24px;
+}
+
+.form-row .form-group {
+  margin-bottom: 0;
+  margin-top: 0;
 }
 
 .help-text {
