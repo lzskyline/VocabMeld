@@ -14,5 +14,7 @@
   ],
   "author": "LzSkyline",
   "license": "MIT",
-  "devDependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.27.2"
+  }
 }

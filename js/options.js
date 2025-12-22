@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 行为设置
     autoProcess: document.getElementById('autoProcess'),
     showPhonetic: document.getElementById('showPhonetic'),
+    showDictionary: document.getElementById('showDictionary'),
     showAddMemorize: document.getElementById('showAddMemorize'),
     cacheMaxSizeRadios: document.querySelectorAll('input[name="cacheMaxSize"]'),
     translationStyleRadios: document.querySelectorAll('input[name="translationStyle"]'),
@@ -399,6 +400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 行为设置
       elements.autoProcess.checked = result.autoProcess ?? false;
       elements.showPhonetic.checked = result.showPhonetic ?? true;
+      elements.showDictionary.checked = result.showDictionary ?? true;
       elements.showAddMemorize.checked = result.showAddMemorize ?? true;
       
       const cacheMaxSize = result.cacheMaxSize || 2000;
@@ -700,6 +702,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       processMode: document.querySelector('input[name="processMode"]:checked')?.value || 'both',
       autoProcess: elements.autoProcess.checked,
       showPhonetic: elements.showPhonetic.checked,
+      showDictionary: elements.showDictionary.checked,
       showAddMemorize: elements.showAddMemorize.checked,
       cacheMaxSize: parseInt(document.querySelector('input[name="cacheMaxSize"]:checked').value),
       translationStyle: document.querySelector('input[name="translationStyle"]:checked').value,
@@ -786,6 +789,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const checkboxes = [
       elements.autoProcess,
       elements.showPhonetic,
+      elements.showDictionary,
       elements.showAddMemorize
     ];
 
@@ -1103,6 +1107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           intensity: syncData.intensity,
           autoProcess: syncData.autoProcess,
           showPhonetic: syncData.showPhonetic,
+          showDictionary: syncData.showDictionary,
           showAddMemorize: syncData.showAddMemorize,
           cacheMaxSize: syncData.cacheMaxSize,
           translationStyle: syncData.translationStyle,

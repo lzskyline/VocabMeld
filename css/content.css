@@ -266,6 +266,100 @@
   color: #1e293b !important;
 }
 
+/* Dictionary styles */
+.vocabmeld-tooltip .vocabmeld-tooltip-dict {
+  margin: 8px 0 !important;
+  padding: 8px 0 !important;
+  border-top: 1px solid #334155 !important;
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  font-size: 12px !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #475569 transparent !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-tooltip-dict::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-tooltip-dict::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-tooltip-dict::-webkit-scrollbar-thumb {
+  background: #475569 !important;
+  border-radius: 3px !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-tooltip-dict::-webkit-scrollbar-thumb:hover {
+  background: #64748b !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-tooltip-dict {
+  scrollbar-color: #cbd5e1 transparent !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-tooltip-dict::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-tooltip-dict::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-tooltip-dict {
+  border-top: 1px solid #e2e8f0 !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-loading,
+.vocabmeld-tooltip .vocabmeld-dict-empty {
+  color: #64748b !important;
+  font-style: italic !important;
+  text-align: center !important;
+  padding: 4px 0 !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-entry {
+  margin-bottom: 6px !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-entry:last-child {
+  margin-bottom: 0 !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-pos {
+  display: inline-block !important;
+  background: #475569 !important;
+  color: #e2e8f0 !important;
+  padding: 1px 6px !important;
+  border-radius: 3px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: lowercase !important;
+  margin-bottom: 4px !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-dict-pos {
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-defs {
+  margin: 4px 0 0 16px !important;
+  padding: 0 !important;
+  list-style: disc !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-dict-defs li {
+  color: #94a3b8 !important;
+  margin-bottom: 2px !important;
+  line-height: 1.4 !important;
+}
+
+.vocabmeld-tooltip[data-theme="light"] .vocabmeld-dict-defs li {
+  color: #64748b !important;
+}
+
 .vocabmeld-toast {
   position: fixed !important;
   z-index: 2147483647 !important;
