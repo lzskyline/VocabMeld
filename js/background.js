@@ -3,6 +3,171 @@
  * 处理扩展级别的事件和消息
  */
 
+// ============ Offscreen Document Management ============
+let creatingOffscreen = null;
+
+async function ensureOffscreenDocument() {
+  const offscreenUrl = 'offscreen.html';
+
+  // Check if offscreen document already exists
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL(offscreenUrl)]
+  });
+
+  if (existingContexts.length > 0) {
+    return; // Already exists
+  }
+
+  // Avoid creating multiple offscreen documents simultaneously
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: offscreenUrl,
+    reasons: ['AUDIO_PLAYBACK'],
+    justification: 'Play TTS audio from Edge TTS API'
+  });
+
+  await creatingOffscreen;
+  creatingOffscreen = null;
+}
+
+// ============ Edge TTS Functions ============
+
+/**
+ * Convert ArrayBuffer to base64 string
+ */
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Speak text using Edge TTS API
+ */
+async function speakWithEdgeTts(text, endpoint, apiKey, voice, speed) {
+  try {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: text,
+        voice: voice || 'en-US-AriaNeural',
+        speed: speed || 1.0
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Edge TTS API error: ${response.status} - ${errorText}`);
+    }
+
+    // Get audio as blob
+    const audioBlob = await response.blob();
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const base64Data = arrayBufferToBase64(arrayBuffer);
+
+    // Ensure offscreen document exists and send audio to it
+    await ensureOffscreenDocument();
+
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'playAudio',
+        audioData: base64Data,
+        mimeType: audioBlob.type || 'audio/mpeg'
+      }, (response) => {
+        resolve(response || { success: true });
+      });
+    });
+  } catch (error) {
+    console.error('[VocabMeld] Edge TTS error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Speak using system TTS as fallback
+ */
+function speakWithSystemTts(text, lang, rate, voiceName) {
+  return new Promise((resolve) => {
+    chrome.tts.stop();
+
+    const options = {
+      lang: lang,
+      rate: rate || 1.0,
+      pitch: 1.0
+    };
+
+    if (voiceName) {
+      options.voiceName = voiceName;
+    }
+
+    chrome.tts.speak(text, options, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[VocabMeld] TTS Error:', chrome.runtime.lastError.message);
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        resolve({ success: true });
+      }
+    });
+  });
+}
+
+/**
+ * Test Edge TTS connection
+ */
+async function testEdgeTtsConnection(endpoint, apiKey, voice) {
+  try {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: 'Test',
+        voice: voice || 'en-US-AriaNeural',
+        speed: 1.0
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    // Check if response is audio
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('audio')) {
+      return { success: true, message: '连接成功！' };
+    }
+
+    throw new Error('Invalid response type');
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+}
+
 // 安装/更新时初始化
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[VocabMeld] Extension installed/updated:', details.reason);
@@ -96,36 +261,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'speak') {
     const text = message.text;
     const lang = message.lang || 'en-US';
-    
-    // 获取用户配置的语音设置
-    chrome.storage.sync.get(['ttsRate', 'ttsVoice'], (settings) => {
+
+    // 获取用户配置的语音设置，包括 Edge TTS
+    chrome.storage.sync.get(['ttsRate', 'ttsVoice', 'edgeTtsEnabled', 'edgeTtsEndpoint', 'edgeTtsApiKey', 'edgeTtsVoice', 'edgeTtsSpeed'], async (settings) => {
       const rate = settings.ttsRate || 1.0;
       const preferredVoice = settings.ttsVoice || '';
-      
-      // 先停止之前的朗读
-      chrome.tts.stop();
-      
-      const options = {
-        lang: lang,
-        rate: rate,
-        pitch: 1.0
-      };
-      
-      // 如果用户指定了声音，使用用户的选择
-      if (preferredVoice) {
-        options.voiceName = preferredVoice;
-      }
-      
-      chrome.tts.speak(text, options, () => {
-        if (chrome.runtime.lastError) {
-          console.error('[VocabMeld] TTS Error:', chrome.runtime.lastError.message);
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ success: true });
+
+      // Check if Edge TTS is enabled and configured
+      if (settings.edgeTtsEnabled && settings.edgeTtsEndpoint) {
+        try {
+          const result = await speakWithEdgeTts(
+            text,
+            settings.edgeTtsEndpoint,
+            settings.edgeTtsApiKey || '',
+            settings.edgeTtsVoice || 'en-US-AriaNeural',
+            settings.edgeTtsSpeed || 1.0
+          );
+          sendResponse(result);
+        } catch (error) {
+          console.error('[VocabMeld] Edge TTS failed, falling back to system TTS:', error);
+          // Fallback to system TTS
+          const result = await speakWithSystemTts(text, lang, rate, preferredVoice);
+          sendResponse(result);
         }
-      });
+      } else {
+        // Use system TTS
+        const result = await speakWithSystemTts(text, lang, rate, preferredVoice);
+        sendResponse(result);
+      }
     });
-    
+
+    return true;
+  }
+
+  // 测试 Edge TTS 连接
+  if (message.action === 'testEdgeTts') {
+    testEdgeTtsConnection(message.endpoint, message.apiKey, message.voice)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, message: error.message }));
+    return true;
+  }
+
+  // Edge TTS 发音测试
+  if (message.action === 'speakEdgeTts') {
+    speakWithEdgeTts(message.text, message.endpoint, message.apiKey, message.voice, message.speed)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
   

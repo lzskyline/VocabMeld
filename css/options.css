@@ -2337,3 +2337,63 @@ input:checked + .toggle-slider:before {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* Edge TTS 设置样式 */
+.edge-tts-section {
+  margin-top: 24px;
+}
+
+.edge-tts-toggle {
+  margin-bottom: 0;
+}
+
+.edge-tts-config .voice-settings {
+  background: var(--bg-tertiary);
+}
+
+.edge-tts-config .voice-setting-row input[type="url"],
+.edge-tts-config .voice-setting-row input[type="password"],
+.edge-tts-config .voice-setting-row input[type="text"] {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.edge-tts-config .voice-setting-row input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.edge-tts-config .input-with-toggle {
+  position: relative;
+  display: flex;
+}
+
+.edge-tts-config .input-with-toggle input {
+  flex: 1;
+  padding-right: 40px;
+}
+
+.edge-tts-config .toggle-visibility {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.edge-tts-config .toggle-visibility:hover {
+  color: var(--text-primary);
+}
+
+.edge-tts-result {
+  font-size: 14px;
+  font-weight: 500;
+}
