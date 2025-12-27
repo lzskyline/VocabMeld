@@ -2337,3 +2337,547 @@ input:checked + .toggle-slider:before {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ============ API 节点管理样式 ============ */
+
+.api-nodes-container {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.api-nodes-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.api-nodes-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.api-nodes-hint {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.api-nodes-list {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100px;
+}
+
+.api-nodes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.api-nodes-empty svg {
+  opacity: 0.3;
+  margin-bottom: 16px;
+}
+
+.api-nodes-empty p {
+  margin: 4px 0;
+}
+
+.api-nodes-empty .hint {
+  font-size: 12px;
+}
+
+/* 节点卡片 */
+.api-node-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  transition: var(--transition);
+}
+
+.api-node-card:hover {
+  border-color: var(--border-light);
+  box-shadow: var(--shadow);
+}
+
+.api-node-card.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.api-node-card.drag-over {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, var(--bg-card));
+}
+
+.api-node-card.current {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
+}
+
+.api-node-drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  padding: 4px;
+}
+
+.api-node-drag-handle:hover {
+  color: var(--text-secondary);
+}
+
+.api-node-status {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.api-node-status.healthy {
+  background: var(--success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 50%, transparent);
+}
+
+.api-node-status.error {
+  background: var(--danger);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.api-node-status.unknown {
+  background: var(--text-muted);
+}
+
+.api-node-status.disabled {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.api-node-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-node-name {
+  font-weight: 500;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-node-name .current-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--primary);
+  color: white;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.api-node-endpoint {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.api-node-error {
+  font-size: 11px;
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.api-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-node-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+}
+
+.api-node-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.api-node-toggle .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-tertiary);
+  transition: var(--transition);
+  border-radius: 20px;
+}
+
+.api-node-toggle .slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--text-muted);
+  transition: var(--transition);
+  border-radius: 50%;
+}
+
+.api-node-toggle input:checked + .slider {
+  background-color: var(--primary);
+}
+
+.api-node-toggle input:checked + .slider:before {
+  transform: translateX(16px);
+  background-color: white;
+}
+
+.api-node-btn {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: var(--transition);
+}
+
+.api-node-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.api-node-btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
+/* 测试按钮样式 */
+.api-node-test-btn {
+  position: relative;
+}
+
+.api-node-test-btn:hover {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  color: var(--primary);
+}
+
+.api-node-test-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.api-node-test-btn .loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.modal-body .form-group {
+  margin-bottom: 16px;
+}
+
+.modal-body .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.modal-footer-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* 预设按钮 */
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-btn {
+  font-size: 12px !important;
+  padding: 6px 12px !important;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.btn-outline:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* 测试结果 */
+.modal-footer .test-result {
+  font-size: 12px;
+}
+
+/* ============ 速率限制设置样式 ============ */
+
+.rate-limit-settings {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.rate-limit-toggle {
+  border-bottom: none;
+  border-radius: var(--radius);
+}
+
+.rate-limit-settings .rate-limit-toggle {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.rate-limit-options {
+  padding: 20px 24px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.rate-limit-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rate-limit-option > label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  margin-bottom: 0;
+  min-width: 100px;
+}
+
+.rate-limit-input-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.rate-limit-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.rate-limit-input-wrapper:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.rate-limit-input-wrapper input[type="number"] {
+  width: 80px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: center;
+  outline: none;
+}
+
+.rate-limit-input-wrapper input[type="number"]::-webkit-inner-spin-button,
+.rate-limit-input-wrapper input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.rate-limit-unit {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.rate-limit-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 输入框带提示 */
+.input-with-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-with-hint input {
+  width: 100%;
+}
+
+.input-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 节点卡片速率限制状态 */
+.api-node-rate-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.api-node-rate-info .rate-count {
+  color: var(--text-secondary);
+}
+
+.api-node-rate-info .rate-limited {
+  color: var(--warning);
+}
+
+.api-node-rate-info .rate-cooldown {
+  color: var(--danger);
+}
+
+.api-node-rate-info .rate-unlimited {
+  color: var(--success);
+}
+
+.api-node-rate-info .rate-config {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* 速率限制状态指示器颜色 */
+.api-node-status.rate_limited {
+  background: var(--warning);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--warning) 50%, transparent);
+}
+
+.api-node-status.cooldown {
+  background: #FF9800;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
+  animation: pulse-cooldown 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-cooldown {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

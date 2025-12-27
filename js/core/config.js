@@ -69,7 +69,11 @@ export const DEFAULT_CONFIG = {
   apiEndpoint: API_PRESETS.deepseek.endpoint,
   apiKey: '',
   modelName: API_PRESETS.deepseek.model,
-  
+
+  // 速率限制配置
+  rateLimitEnabled: false,         // 是否启用速率限制轮询
+  globalRateLimit: 60,             // 全局默认 RPM
+
   // 学习偏好
   nativeLanguage: 'zh-CN',
   targetLanguage: 'en',
@@ -101,6 +105,70 @@ export const CACHE_CONFIG = {
   maxSize: 2000,
   storageKey: 'vocabmeld_word_cache'
 };
+
+// API 节点状态枚举
+export const NODE_STATUS = {
+  HEALTHY: 'healthy',   // 正常
+  ERROR: 'error',       // 错误（暂时移出候选列表）
+  UNKNOWN: 'unknown'    // 未知（初始状态）
+};
+
+// 故障转移配置
+export const FAILOVER_CONFIG = {
+  errorWindowMs: 5 * 60 * 1000,    // 错误统计时间窗口：5 分钟
+  errorThreshold: 3,               // 错误阈值：5 分钟内 3 次失败标记为 error
+  healthCheckIntervalMs: 5 * 60 * 1000,  // 健康检查间隔：5 分钟
+  maxNodes: 10                     // 最大节点数量
+};
+
+// 速率限制配置
+export const RATE_LIMIT_CONFIG = {
+  defaultRpm: 60,                  // 默认每分钟请求数
+  windowMs: 60 * 1000,             // 统计窗口：1 分钟
+  defaultCooldownMs: 60 * 1000     // 默认冷却时间：60 秒
+};
+
+/**
+ * 生成唯一 ID
+ * @returns {string}
+ */
+export function generateNodeId() {
+  return 'node_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * 创建默认 API 节点
+ * @param {object} preset - API 预设配置
+ * @param {number} priority - 优先级
+ * @returns {object}
+ */
+export function createDefaultNode(preset, priority = 0) {
+  return {
+    id: generateNodeId(),
+    name: preset.name,
+    endpoint: preset.endpoint,
+    apiKey: '',
+    model: preset.model,
+    enabled: true,
+    priority: priority,
+    rateLimit: null  // 每分钟请求数，null = 使用全局设置
+  };
+}
+
+/**
+ * 创建默认节点状态
+ * @param {string} nodeId - 节点 ID
+ * @returns {object}
+ */
+export function createDefaultNodeStatus(nodeId) {
+  return {
+    nodeId: nodeId,
+    status: NODE_STATUS.UNKNOWN,
+    lastError: null,
+    lastErrorTime: null,
+    recentErrors: []
+  };
+}
 
 // 需要跳过的标签
 export const SKIP_TAGS = [

@@ -3,7 +3,7 @@
  * 封装 Chrome Storage API，提供统一的存储接口
  */
 
-import { DEFAULT_CONFIG } from './config.js';
+import { DEFAULT_CONFIG, NODE_STATUS, FAILOVER_CONFIG, generateNodeId, createDefaultNodeStatus } from './config.js';
 
 /**
  * 存储服务类
@@ -238,6 +238,268 @@ class StorageService {
     };
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);
+  }
+
+  // ============ API 节点管理方法 ============
+
+  /**
+   * 获取所有 API 节点配置
+   * @returns {Promise<Array>}
+   */
+  async getApiNodes() {
+    const result = await this.get('apiNodes');
+    return result.apiNodes || [];
+  }
+
+  /**
+   * 保存 API 节点配置
+   * @param {Array} nodes - 节点数组
+   * @returns {Promise<void>}
+   */
+  async saveApiNodes(nodes) {
+    // 确保节点数量不超过限制
+    const limitedNodes = nodes.slice(0, FAILOVER_CONFIG.maxNodes);
+    await this.set({ apiNodes: limitedNodes });
+  }
+
+  /**
+   * 添加新节点
+   * @param {object} node - 节点配置
+   * @returns {Promise<object>} - 添加的节点（包含生成的 ID）
+   */
+  async addApiNode(node) {
+    const nodes = await this.getApiNodes();
+    if (nodes.length >= FAILOVER_CONFIG.maxNodes) {
+      throw new Error(`最多只能添加 ${FAILOVER_CONFIG.maxNodes} 个节点`);
+    }
+
+    const newNode = {
+      id: generateNodeId(),
+      name: node.name || '未命名节点',
+      endpoint: node.endpoint || '',
+      apiKey: node.apiKey || '',
+      model: node.model || '',
+      enabled: node.enabled !== false,
+      priority: nodes.length  // 新节点默认优先级最低
+    };
+
+    nodes.push(newNode);
+    await this.saveApiNodes(nodes);
+
+    // 初始化节点状态
+    await this.initNodeStatus(newNode.id);
+
+    return newNode;
+  }
+
+  /**
+   * 更新节点配置
+   * @param {string} nodeId - 节点 ID
+   * @param {object} updates - 更新内容
+   * @returns {Promise<void>}
+   */
+  async updateApiNode(nodeId, updates) {
+    const nodes = await this.getApiNodes();
+    const index = nodes.findIndex(n => n.id === nodeId);
+    if (index === -1) {
+      throw new Error('节点不存在');
+    }
+
+    // 不允许修改 ID
+    delete updates.id;
+    nodes[index] = { ...nodes[index], ...updates };
+    await this.saveApiNodes(nodes);
+  }
+
+  /**
+   * 删除节点
+   * @param {string} nodeId - 节点 ID
+   * @returns {Promise<void>}
+   */
+  async deleteApiNode(nodeId) {
+    const nodes = await this.getApiNodes();
+    const filtered = nodes.filter(n => n.id !== nodeId);
+
+    // 重新计算优先级
+    filtered.forEach((node, index) => {
+      node.priority = index;
+    });
+
+    await this.saveApiNodes(filtered);
+
+    // 清理节点状态
+    await this.clearNodeStatus(nodeId);
+  }
+
+  /**
+   * 更新节点优先级（拖拽排序后调用）
+   * @param {Array<string>} nodeIds - 按新优先级排序的节点 ID 数组
+   * @returns {Promise<void>}
+   */
+  async updateNodePriorities(nodeIds) {
+    const nodes = await this.getApiNodes();
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+    const reordered = nodeIds
+      .map((id, index) => {
+        const node = nodeMap.get(id);
+        if (node) {
+          node.priority = index;
+          return node;
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    await this.saveApiNodes(reordered);
+  }
+
+  /**
+   * 获取所有启用且健康的节点（按优先级排序）
+   * @returns {Promise<Array>}
+   */
+  async getActiveNodes() {
+    const nodes = await this.getApiNodes();
+    const statuses = await this.getAllNodeStatuses();
+    const statusMap = new Map(statuses.map(s => [s.nodeId, s]));
+
+    return nodes
+      .filter(node => {
+        if (!node.enabled) return false;
+        const status = statusMap.get(node.id);
+        // 未知状态或健康状态的节点都可用
+        return !status || status.status !== NODE_STATUS.ERROR;
+      })
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  /**
+   * 获取下一个可用节点（跳过指定节点）
+   * @param {string} skipNodeId - 要跳过的节点 ID
+   * @returns {Promise<object|null>}
+   */
+  async getNextActiveNode(skipNodeId) {
+    const activeNodes = await this.getActiveNodes();
+    return activeNodes.find(n => n.id !== skipNodeId) || null;
+  }
+
+  // ============ 节点状态管理方法 ============
+
+  /**
+   * 获取所有节点状态
+   * @returns {Promise<Array>}
+   */
+  async getAllNodeStatuses() {
+    const result = await this.getLocal('apiNodeStatuses');
+    return result.apiNodeStatuses || [];
+  }
+
+  /**
+   * 获取单个节点状态
+   * @param {string} nodeId - 节点 ID
+   * @returns {Promise<object>}
+   */
+  async getNodeStatus(nodeId) {
+    const statuses = await this.getAllNodeStatuses();
+    return statuses.find(s => s.nodeId === nodeId) || createDefaultNodeStatus(nodeId);
+  }
+
+  /**
+   * 初始化节点状态
+   * @param {string} nodeId - 节点 ID
+   * @returns {Promise<void>}
+   */
+  async initNodeStatus(nodeId) {
+    const statuses = await this.getAllNodeStatuses();
+    if (!statuses.find(s => s.nodeId === nodeId)) {
+      statuses.push(createDefaultNodeStatus(nodeId));
+      await this.setLocal({ apiNodeStatuses: statuses });
+    }
+  }
+
+  /**
+   * 更新节点状态
+   * @param {string} nodeId - 节点 ID
+   * @param {object} updates - 状态更新
+   * @returns {Promise<void>}
+   */
+  async updateNodeStatus(nodeId, updates) {
+    const statuses = await this.getAllNodeStatuses();
+    const index = statuses.findIndex(s => s.nodeId === nodeId);
+
+    if (index === -1) {
+      const newStatus = { ...createDefaultNodeStatus(nodeId), ...updates };
+      statuses.push(newStatus);
+    } else {
+      statuses[index] = { ...statuses[index], ...updates };
+    }
+
+    await this.setLocal({ apiNodeStatuses: statuses });
+  }
+
+  /**
+   * 记录节点错误
+   * @param {string} nodeId - 节点 ID
+   * @param {string} errorMessage - 错误信息
+   * @returns {Promise<object>} - 更新后的状态
+   */
+  async recordNodeError(nodeId, errorMessage) {
+    const status = await this.getNodeStatus(nodeId);
+    const now = Date.now();
+
+    // 添加错误时间戳
+    status.recentErrors.push(now);
+    status.lastError = errorMessage;
+    status.lastErrorTime = now;
+
+    // 过滤掉超过时间窗口的错误
+    status.recentErrors = status.recentErrors.filter(
+      t => now - t < FAILOVER_CONFIG.errorWindowMs
+    );
+
+    // 检查是否需要标记为 error
+    if (status.recentErrors.length >= FAILOVER_CONFIG.errorThreshold) {
+      status.status = NODE_STATUS.ERROR;
+    }
+
+    await this.updateNodeStatus(nodeId, status);
+    return status;
+  }
+
+  /**
+   * 标记节点为健康状态
+   * @param {string} nodeId - 节点 ID
+   * @returns {Promise<void>}
+   */
+  async markNodeHealthy(nodeId) {
+    await this.updateNodeStatus(nodeId, {
+      status: NODE_STATUS.HEALTHY,
+      lastError: null,
+      lastErrorTime: null,
+      recentErrors: []
+    });
+  }
+
+  /**
+   * 清理节点状态
+   * @param {string} nodeId - 节点 ID
+   * @returns {Promise<void>}
+   */
+  async clearNodeStatus(nodeId) {
+    const statuses = await this.getAllNodeStatuses();
+    const filtered = statuses.filter(s => s.nodeId !== nodeId);
+    await this.setLocal({ apiNodeStatuses: filtered });
+  }
+
+  /**
+   * 获取所有处于 error 状态的节点 ID
+   * @returns {Promise<Array<string>>}
+   */
+  async getErrorNodeIds() {
+    const statuses = await this.getAllNodeStatuses();
+    return statuses
+      .filter(s => s.status === NODE_STATUS.ERROR)
+      .map(s => s.nodeId);
   }
 }
 

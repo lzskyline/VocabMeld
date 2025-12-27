@@ -174,10 +174,17 @@
       chrome.storage.sync.get(null, (syncResult) => {
         // 从 local 获取词汇列表（避免 sync 的 8KB 限制）
         chrome.storage.local.get(['learnedWords', 'memorizeList'], (localResult) => {
+          // 检查是否有可用的 API 节点
+          const apiNodes = syncResult.apiNodes || [];
+          const hasApiNodes = apiNodes.some(n => n.enabled);
+
           config = {
-            apiEndpoint: syncResult.apiEndpoint || 'https://api.deepseek.com/chat/completions',
+            // 使用新的多节点配置，保留旧字段用于向后兼容
+            apiEndpoint: hasApiNodes ? 'multi-node' : (syncResult.apiEndpoint || ''),
             apiKey: syncResult.apiKey || '',
             modelName: syncResult.modelName || 'deepseek-chat',
+            apiNodes: apiNodes,
+            hasApiNodes: hasApiNodes,
             nativeLanguage: syncResult.nativeLanguage || 'zh-CN',
             targetLanguage: syncResult.targetLanguage || 'en',
             difficultyLevel: syncResult.difficultyLevel || 'B1',
@@ -200,7 +207,7 @@
             customTheme: syncResult.customTheme || null,
             customizedThemes: syncResult.customizedThemes || null
           };
-          
+
           // 加载保存的自定义主题配置
           if (config.customizedThemes) {
             ['ocean', 'forest', 'sunset'].forEach(themeId => {
@@ -209,10 +216,10 @@
               }
             });
           }
-          
+
           // 应用主题
           applyColorTheme(config.colorTheme, config.customTheme);
-          
+
           resolve(config);
         });
       });
@@ -733,7 +740,7 @@
 
   // ============ API 调用 ============
   async function translateText(text) {
-    if (!config.apiEndpoint) {
+    if (!config.hasApiNodes && !config.apiEndpoint) {
       throw new Error('API 未配置');
     }
 
@@ -1059,7 +1066,7 @@ ${filteredText}
 
   // ============ 特定单词处理 ============
   async function translateSpecificWords(targetWords) {
-    if (!config.apiEndpoint || !targetWords?.length) {
+    if ((!config.hasApiNodes && !config.apiEndpoint) || !targetWords?.length) {
       return [];
     }
 
@@ -1208,7 +1215,7 @@ ${uncached.join(', ')}
 
   // 根据上下文重新翻译单词
   async function retranslateWithContext(originalWord) {
-    if (!config.apiEndpoint) {
+    if (!config.hasApiNodes && !config.apiEndpoint) {
       showToast('请先配置 API');
       return;
     }
@@ -2585,9 +2592,9 @@ ${originalWord}
     setupIntersectionObserver();
     
     setupEventListeners();
-    
+
     // 自动处理 - 使用 IntersectionObserver 懒加载
-    if (config.autoProcess && config.enabled && config.apiEndpoint) {
+    if (config.autoProcess && config.enabled && (config.hasApiNodes || config.apiEndpoint)) {
       // 延迟启动，等待页面渲染完成
       setTimeout(() => {
         // 先处理记忆列表中的单词

@@ -66,66 +66,124 @@
       <!-- API 配置 -->
       <section id="api" class="settings-section active">
         <h2>API 配置</h2>
-        <p class="section-desc">配置用于翻译的 AI 服务 API</p>
+        <p class="section-desc">配置用于翻译的 AI 服务节点，支持多节点自动故障转移</p>
 
-        <div class="form-group">
-          <label>配置</label>
-          <div class="config-selector">
-            <select id="apiConfigSelect"></select>
-            <button type="button" class="btn-icon" id="newConfigBtn" title="新建配置">
-              <svg viewBox="0 0 24 24" width="18" height="18">
+        <!-- 速率限制轮询设置 -->
+        <div class="rate-limit-settings">
+          <div class="toggle-item rate-limit-toggle">
+            <div class="toggle-info">
+              <span class="toggle-title">速率限制轮询</span>
+              <span class="toggle-desc">当节点达到请求频率限制时自动切换到下一个可用节点</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="rateLimitEnabled">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="rate-limit-options" id="rateLimitOptions" style="display: none;">
+            <div class="rate-limit-option">
+              <label for="globalRateLimit">全局速率限制</label>
+              <div class="rate-limit-input-group">
+                <div class="rate-limit-input-wrapper">
+                  <input type="number" id="globalRateLimit" min="0" max="1000" value="60">
+                  <span class="rate-limit-unit">次/分钟</span>
+                </div>
+                <span class="rate-limit-hint">设为 0 表示无限制，单个节点可单独覆盖</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 节点列表 -->
+        <div class="api-nodes-container">
+          <div class="api-nodes-header">
+            <span class="api-nodes-title">API 节点</span>
+            <span class="api-nodes-hint">拖拽调整优先级，优先使用排在前面的节点</span>
+            <button type="button" class="btn btn-primary btn-sm" id="addNodeBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16">
                 <path fill="currentColor" d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
               </svg>
+              添加节点
             </button>
-            <button type="button" class="btn-icon btn-icon-danger" id="deleteConfigBtn" title="删除配置">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
-              </svg>
-            </button>
+          </div>
+          <div class="api-nodes-list" id="apiNodesList">
+            <!-- 节点卡片将通过 JS 动态生成 -->
+          </div>
+          <div class="api-nodes-empty" id="apiNodesEmpty" style="display: none;">
+            <svg viewBox="0 0 24 24" width="48" height="48">
+              <path fill="currentColor" d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,5A3,3 0 0,1 15,8A3,3 0 0,1 12,11A3,3 0 0,1 9,8A3,3 0 0,1 12,5Z"/>
+            </svg>
+            <p>暂无 API 节点</p>
+            <p class="hint">点击上方「添加节点」按钮创建第一个节点</p>
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="configName">配置名称</label>
-          <input type="text" id="configName" placeholder="输入配置名称">
-        </div>
-
-        <div class="form-group">
-          <label for="apiEndpoint">API 端点</label>
-          <input type="url" id="apiEndpoint" placeholder="https://api.example.com/v1/chat/completions">
-        </div>
-
-        <div class="form-group">
-          <label for="apiKey">API 密钥</label>
-          <div class="input-with-toggle">
-            <input type="password" id="apiKey" placeholder="sk-xxxxx">
-            <button type="button" class="toggle-visibility" id="toggleApiKey">
-              <svg viewBox="0 0 24 24" width="20" height="20">
-                <path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
-              </svg>
-            </button>
+        <!-- 节点编辑弹窗 -->
+        <div class="modal-overlay" id="nodeModalOverlay" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="nodeModalTitle">添加节点</h3>
+              <button type="button" class="modal-close" id="nodeModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label for="nodeNameInput">节点名称</label>
+                <input type="text" id="nodeNameInput" placeholder="例如：DeepSeek、OpenAI">
+              </div>
+              <div class="form-group">
+                <label for="nodeEndpointInput">API 端点</label>
+                <input type="url" id="nodeEndpointInput" placeholder="https://api.example.com/v1/chat/completions">
+              </div>
+              <div class="form-group">
+                <label for="nodeApiKeyInput">API 密钥</label>
+                <div class="input-with-toggle">
+                  <input type="password" id="nodeApiKeyInput" placeholder="sk-xxxxx">
+                  <button type="button" class="toggle-visibility" id="toggleNodeApiKey">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                      <path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="nodeModelInput">模型名称</label>
+                <input type="text" id="nodeModelInput" placeholder="例如：deepseek-chat、gpt-4o-mini">
+              </div>
+              <div class="form-group">
+                <label for="nodeRateLimitInput">速率限制 (RPM)</label>
+                <div class="rate-limit-input-group">
+                  <div class="rate-limit-input-wrapper">
+                    <input type="number" id="nodeRateLimitInput" min="0" max="1000" placeholder="0">
+                    <span class="rate-limit-unit">次/分钟</span>
+                  </div>
+                  <span class="rate-limit-hint">0 或留空使用全局设置</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>快速填充</label>
+                <div class="preset-buttons">
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="deepseek">DeepSeek</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="openai">OpenAI</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="moonshot">Moonshot</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="groq">Groq</button>
+                  <button type="button" class="btn btn-outline btn-sm preset-btn" data-preset="ollama">Ollama</button>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" id="testNodeBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
+                </svg>
+                测试连接
+              </button>
+              <span class="test-result" id="nodeTestResult"></span>
+              <div class="modal-footer-right">
+                <button type="button" class="btn btn-secondary" id="cancelNodeBtn">取消</button>
+                <button type="button" class="btn btn-primary" id="saveNodeBtn">保存</button>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div class="form-group">
-          <label for="modelName">模型名称</label>
-          <input type="text" id="modelName" placeholder="gpt-4o-mini">
-        </div>
-
-        <div class="form-actions">
-          <button class="btn btn-primary" id="saveConfigBtn">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/>
-            </svg>
-            保存配置
-          </button>
-          <button class="btn btn-secondary" id="testConnectionBtn">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
-            </svg>
-            测试连接
-          </button>
-          <span class="test-result" id="testResult"></span>
         </div>
       </section>
 

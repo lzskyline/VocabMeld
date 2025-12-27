@@ -3,19 +3,6 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 默认 API 配置
-  const DEFAULT_API_CONFIGS = {
-    'OpenAI': { endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini' },
-    'DeepSeek': { endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat' },
-    'Moonshot': { endpoint: 'https://api.moonshot.cn/v1/chat/completions', apiKey: '', model: 'moonshot-v1-8k' },
-    'Groq': { endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '', model: 'llama-3.1-8b-instant' },
-    'Ollama': { endpoint: 'http://localhost:11434/v1/chat/completions', apiKey: '', model: 'qwen2.5:7b' }
-  };
-
-  // 当前配置状态
-  let apiConfigs = {};
-  let currentConfigName = '';
-
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
   // 防抖保存函数
@@ -31,18 +18,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     navItems: document.querySelectorAll('.nav-item'),
     sections: document.querySelectorAll('.settings-section'),
 
-    // API 配置
-    apiConfigSelect: document.getElementById('apiConfigSelect'),
-    newConfigBtn: document.getElementById('newConfigBtn'),
-    saveConfigBtn: document.getElementById('saveConfigBtn'),
-    deleteConfigBtn: document.getElementById('deleteConfigBtn'),
-    configName: document.getElementById('configName'),
-    apiEndpoint: document.getElementById('apiEndpoint'),
-    apiKey: document.getElementById('apiKey'),
-    modelName: document.getElementById('modelName'),
-    toggleApiKey: document.getElementById('toggleApiKey'),
-    testConnectionBtn: document.getElementById('testConnectionBtn'),
-    testResult: document.getElementById('testResult'),
+    // API 节点管理
+    apiNodesList: document.getElementById('apiNodesList'),
+    apiNodesEmpty: document.getElementById('apiNodesEmpty'),
+    addNodeBtn: document.getElementById('addNodeBtn'),
+    nodeModalOverlay: document.getElementById('nodeModalOverlay'),
+    nodeModalTitle: document.getElementById('nodeModalTitle'),
+    nodeModalClose: document.getElementById('nodeModalClose'),
+    nodeNameInput: document.getElementById('nodeNameInput'),
+    nodeEndpointInput: document.getElementById('nodeEndpointInput'),
+    nodeApiKeyInput: document.getElementById('nodeApiKeyInput'),
+    nodeModelInput: document.getElementById('nodeModelInput'),
+    nodeRateLimitInput: document.getElementById('nodeRateLimitInput'),
+    toggleNodeApiKey: document.getElementById('toggleNodeApiKey'),
+    testNodeBtn: document.getElementById('testNodeBtn'),
+    nodeTestResult: document.getElementById('nodeTestResult'),
+    cancelNodeBtn: document.getElementById('cancelNodeBtn'),
+    saveNodeBtn: document.getElementById('saveNodeBtn'),
+    presetBtns: document.querySelectorAll('.preset-btn'),
+
+    // 速率限制设置
+    rateLimitEnabled: document.getElementById('rateLimitEnabled'),
+    rateLimitOptions: document.getElementById('rateLimitOptions'),
+    globalRateLimit: document.getElementById('globalRateLimit'),
 
     // 学习偏好
     nativeLanguage: document.getElementById('nativeLanguage'),
@@ -662,167 +660,564 @@ document.addEventListener('DOMContentLoaded', async () => {
     return prefixMap[langCode] || langCode.split('-')[0];
   }
 
-  // 加载 API 配置列表
-  function loadApiConfigs(callback) {
-    chrome.storage.sync.get(['apiConfigs', 'currentApiConfig'], (result) => {
-      // 如果没有配置，使用默认配置
-      apiConfigs = result.apiConfigs || { ...DEFAULT_API_CONFIGS };
-      currentConfigName = result.currentApiConfig || Object.keys(apiConfigs)[0] || '';
-      
-      updateConfigSelect();
-      
-      if (callback) callback();
-    });
-  }
+  // ============ API 节点管理 ============
 
-  // 更新配置下拉框
-  function updateConfigSelect() {
-    const select = elements.apiConfigSelect;
-    select.innerHTML = '';
-    
-    // 添加已有配置
-    Object.keys(apiConfigs).forEach(name => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      if (name === currentConfigName) {
-        option.selected = true;
+  // 当前编辑的节点 ID（null 表示新建）
+  let editingNodeId = null;
+
+  // API 预设配置
+  const API_PRESETS = {
+    deepseek: { name: 'DeepSeek', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
+    openai: { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
+    moonshot: { name: 'Moonshot', endpoint: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k' },
+    groq: { name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant' },
+    ollama: { name: 'Ollama', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5:7b' }
+  };
+
+  // 加载并渲染节点列表（带重试）
+  async function loadApiNodes(retryCount = 0) {
+    const maxRetries = 3;
+    const retryDelay = 200;
+
+    chrome.runtime.sendMessage({ action: 'getNodesWithStatus' }, (response) => {
+      // 检查是否有错误或无响应
+      if (chrome.runtime.lastError || !response) {
+        console.warn('[VocabMeld] loadApiNodes failed:', chrome.runtime.lastError?.message || 'no response');
+        if (retryCount < maxRetries) {
+          setTimeout(() => loadApiNodes(retryCount + 1), retryDelay);
+        }
+        return;
       }
-      select.appendChild(option);
+
+      if (!response.success) {
+        console.error('[VocabMeld] Failed to load nodes:', response.error);
+        return;
+      }
+
+      const { nodes, currentNodeId } = response;
+      renderNodesList(nodes, currentNodeId);
     });
-    
-    // 同步更新配置名称输入框
-    if (currentConfigName) {
-      elements.configName.value = currentConfigName;
-    }
   }
 
-  // 应用选中的配置
-  function applyConfig(name) {
-    if (!apiConfigs[name]) {
-      // 新建配置 - 清空所有字段
-      elements.configName.value = '';
-      elements.apiEndpoint.value = '';
-      elements.apiKey.value = '';
-      elements.modelName.value = '';
-      currentConfigName = '';
+  // 渲染节点列表
+  function renderNodesList(nodes, currentNodeId) {
+    const list = elements.apiNodesList;
+    const empty = elements.apiNodesEmpty;
+
+    if (!nodes || nodes.length === 0) {
+      list.style.display = 'none';
+      empty.style.display = 'flex';
       return;
     }
-    
-    const config = apiConfigs[name];
-    elements.configName.value = name;
-    elements.apiEndpoint.value = config.endpoint || '';
-    elements.apiKey.value = config.apiKey || '';
-    elements.modelName.value = config.model || '';
-    currentConfigName = name;
+
+    list.style.display = 'flex';
+    empty.style.display = 'none';
+
+    // 按优先级排序
+    nodes.sort((a, b) => a.priority - b.priority);
+
+    list.innerHTML = nodes.map(node => {
+      const status = node.status?.status || 'unknown';
+      const rateLimitInfo = node.rateLimitInfo;
+
+      // 确定状态类
+      let statusClass = !node.enabled ? 'disabled' : status;
+      if (rateLimitInfo?.limited) {
+        statusClass = rateLimitInfo.reason === 'cooldown' ? 'cooldown' : 'rate_limited';
+      }
+
+      const isCurrent = node.id === currentNodeId;
+      const lastError = node.status?.lastError;
+
+      // 构建速率限制信息显示（仅在全局开关开启时显示）
+      let rateInfoHtml = '';
+      if (rateLimitInfo?.enabled) {
+        // 显示节点配置的限制值
+        const nodeLimit = node.rateLimit;
+        const effectiveLimit = rateLimitInfo.limit;
+        const isCustom = nodeLimit !== null && nodeLimit !== undefined && nodeLimit > 0;
+        const limitSource = isCustom ? '(自定义)' : '(全局)';
+
+        if (rateLimitInfo.reason === 'cooldown') {
+          const remainingSec = Math.ceil(rateLimitInfo.cooldownRemaining / 1000);
+          rateInfoHtml = `<div class="api-node-rate-info"><span class="rate-cooldown">冷却中 (剩余 ${remainingSec}s)</span></div>`;
+        } else if (effectiveLimit === 0) {
+          rateInfoHtml = `<div class="api-node-rate-info"><span class="rate-unlimited">无限制 ${limitSource}</span></div>`;
+        } else if (rateLimitInfo.limited) {
+          rateInfoHtml = `<div class="api-node-rate-info"><span class="rate-limited">已达限制 ${rateLimitInfo.count}/${effectiveLimit} ${limitSource}</span></div>`;
+        } else {
+          rateInfoHtml = `<div class="api-node-rate-info"><span class="rate-count">已用 ${rateLimitInfo.count}/${effectiveLimit} ${limitSource}</span></div>`;
+        }
+      }
+      // 全局开关关闭时不显示任何速率限制信息
+
+      return `
+        <div class="api-node-card ${isCurrent ? 'current' : ''}" data-node-id="${node.id}" draggable="true">
+          <div class="api-node-drag-handle">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path fill="currentColor" d="M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z"/>
+            </svg>
+          </div>
+          <div class="api-node-status ${statusClass}" title="${getStatusTitle(status, lastError, rateLimitInfo)}"></div>
+          <div class="api-node-info">
+            <div class="api-node-name">
+              ${escapeHtml(node.name)}
+              ${isCurrent ? '<span class="current-badge">当前</span>' : ''}
+            </div>
+            <div class="api-node-endpoint">${escapeHtml(maskEndpoint(node.endpoint))}</div>
+            ${rateInfoHtml}
+            ${lastError && status === 'error' ? `<div class="api-node-error">${escapeHtml(lastError)}</div>` : ''}
+          </div>
+          <div class="api-node-actions">
+            <label class="api-node-toggle" title="${node.enabled ? '点击禁用' : '点击启用'}">
+              <input type="checkbox" ${node.enabled ? 'checked' : ''} data-action="toggle" data-node-id="${node.id}">
+              <span class="slider"></span>
+            </label>
+            <button class="api-node-btn api-node-test-btn" data-action="test" data-node-id="${node.id}" title="测试连接">
+              <svg viewBox="0 0 24 24" width="16" height="16" class="test-icon">
+                <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
+              </svg>
+              <svg viewBox="0 0 24 24" width="16" height="16" class="loading-icon" style="display:none;">
+                <path fill="currentColor" d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/>
+              </svg>
+            </button>
+            <button class="api-node-btn" data-action="edit" data-node-id="${node.id}" title="编辑">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/>
+              </svg>
+            </button>
+            <button class="api-node-btn danger" data-action="delete" data-node-id="${node.id}" title="删除">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 绑定拖拽事件
+    bindDragEvents();
   }
 
-  // 保存当前配置
-  function saveCurrentConfig() {
-    const configName = elements.configName.value.trim();
-    const endpoint = elements.apiEndpoint.value.trim();
-    const apiKey = elements.apiKey.value.trim();
-    const model = elements.modelName.value.trim();
-    
-    // 非空检测
-    if (!configName) {
-      showConfigToast('请输入配置名称', true);
-      elements.configName.focus();
+  // 获取状态提示文本
+  function getStatusTitle(status, lastError, rateLimitInfo) {
+    if (rateLimitInfo?.limited) {
+      if (rateLimitInfo.reason === 'cooldown') {
+        const remainingSec = Math.ceil(rateLimitInfo.cooldownRemaining / 1000);
+        return `冷却中，剩余 ${remainingSec} 秒`;
+      }
+      return `已达速率限制 (${rateLimitInfo.count}/${rateLimitInfo.limit})`;
+    }
+    switch (status) {
+      case 'healthy': return '正常';
+      case 'error': return lastError || '错误';
+      case 'unknown': return '未测试';
+      default: return '已禁用';
+    }
+  }
+
+  // 脱敏端点显示
+  function maskEndpoint(endpoint) {
+    try {
+      const url = new URL(endpoint);
+      return url.host + url.pathname;
+    } catch {
+      return endpoint;
+    }
+  }
+
+  // HTML 转义
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+
+  // 绑定拖拽事件
+  function bindDragEvents() {
+    const cards = document.querySelectorAll('.api-node-card');
+    let draggedCard = null;
+
+    cards.forEach(card => {
+      card.addEventListener('dragstart', (e) => {
+        draggedCard = card;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        document.querySelectorAll('.api-node-card').forEach(c => c.classList.remove('drag-over'));
+
+        // 保存新的优先级顺序
+        const nodeIds = Array.from(document.querySelectorAll('.api-node-card'))
+          .map(c => c.dataset.nodeId);
+
+        chrome.storage.sync.get('apiNodes', (result) => {
+          const nodes = result.apiNodes || [];
+          const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+          const reordered = nodeIds.map((id, index) => {
+            const node = nodeMap.get(id);
+            if (node) {
+              node.priority = index;
+              return node;
+            }
+            return null;
+          }).filter(Boolean);
+
+          chrome.storage.sync.set({ apiNodes: reordered });
+        });
+      });
+
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedCard && draggedCard !== card) {
+          card.classList.add('drag-over');
+        }
+      });
+
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('drag-over');
+      });
+
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        card.classList.remove('drag-over');
+
+        if (draggedCard && draggedCard !== card) {
+          const list = elements.apiNodesList;
+          const cards = Array.from(list.querySelectorAll('.api-node-card'));
+          const draggedIndex = cards.indexOf(draggedCard);
+          const dropIndex = cards.indexOf(card);
+
+          if (draggedIndex < dropIndex) {
+            card.after(draggedCard);
+          } else {
+            card.before(draggedCard);
+          }
+        }
+      });
+    });
+  }
+
+  // 打开节点编辑弹窗
+  function openNodeModal(nodeId = null) {
+    editingNodeId = nodeId;
+
+    if (nodeId) {
+      // 编辑模式
+      elements.nodeModalTitle.textContent = '编辑节点';
+      chrome.storage.sync.get('apiNodes', (result) => {
+        const nodes = result.apiNodes || [];
+        const node = nodes.find(n => n.id === nodeId);
+        if (node) {
+          elements.nodeNameInput.value = node.name || '';
+          elements.nodeEndpointInput.value = node.endpoint || '';
+          elements.nodeApiKeyInput.value = node.apiKey || '';
+          elements.nodeModelInput.value = node.model || '';
+          elements.nodeRateLimitInput.value = node.rateLimit !== null && node.rateLimit !== undefined ? node.rateLimit : '';
+        }
+      });
+    } else {
+      // 新建模式
+      elements.nodeModalTitle.textContent = '添加节点';
+      elements.nodeNameInput.value = '';
+      elements.nodeEndpointInput.value = '';
+      elements.nodeApiKeyInput.value = '';
+      elements.nodeModelInput.value = '';
+      elements.nodeRateLimitInput.value = '';
+    }
+
+    elements.nodeTestResult.textContent = '';
+    elements.nodeModalOverlay.style.display = 'flex';
+  }
+
+  // 关闭节点编辑弹窗
+  function closeNodeModal() {
+    elements.nodeModalOverlay.style.display = 'none';
+    editingNodeId = null;
+  }
+
+  // 保存节点
+  async function saveNode() {
+    const name = elements.nodeNameInput.value.trim();
+    const endpoint = elements.nodeEndpointInput.value.trim();
+    const apiKey = elements.nodeApiKeyInput.value.trim();
+    const model = elements.nodeModelInput.value.trim();
+    const rateLimitValue = elements.nodeRateLimitInput.value.trim();
+    // 0 或留空都表示使用全局设置（存储为 null）
+    const rateLimit = rateLimitValue && parseInt(rateLimitValue) > 0 ? parseInt(rateLimitValue) : null;
+
+    // 验证
+    if (!name) {
+      elements.nodeTestResult.textContent = '请输入节点名称';
+      elements.nodeTestResult.className = 'test-result error';
+      elements.nodeNameInput.focus();
       return;
     }
     if (!endpoint) {
-      showConfigToast('请输入 API 端点', true);
-      elements.apiEndpoint.focus();
+      elements.nodeTestResult.textContent = '请输入 API 端点';
+      elements.nodeTestResult.className = 'test-result error';
+      elements.nodeEndpointInput.focus();
       return;
     }
     if (!model) {
-      showConfigToast('请输入模型名称', true);
-      elements.modelName.focus();
+      elements.nodeTestResult.textContent = '请输入模型名称';
+      elements.nodeTestResult.className = 'test-result error';
+      elements.nodeModelInput.focus();
       return;
     }
-    
-    // 检查是否是重命名（当前选中的配置名与输入的不同）
-    const selectedConfig = elements.apiConfigSelect.value;
-    if (selectedConfig && selectedConfig !== configName && apiConfigs[selectedConfig]) {
-      // 删除旧名称的配置
-      delete apiConfigs[selectedConfig];
-    }
-    
-    // 保存配置
-    apiConfigs[configName] = {
-      endpoint: endpoint,
-      apiKey: apiKey,
-      model: model
-    };
-    
-    currentConfigName = configName;
-    
-    // 保存到存储
-    chrome.storage.sync.set({ 
-      apiConfigs: apiConfigs,
-      currentApiConfig: currentConfigName,
-      apiEndpoint: endpoint,
-      apiKey: apiKey,
-      modelName: model
-    }, () => {
-      updateConfigSelect();
-      showConfigToast(`配置 "${configName}" 已保存`);
-    });
-  }
 
-  // 删除配置
-  function deleteCurrentConfig() {
-    const configName = elements.apiConfigSelect.value;
-    if (configName === '_new') return;
-    
-    if (Object.keys(apiConfigs).length <= 1) {
-      alert('至少保留一个配置');
-      return;
-    }
-    
-    if (!confirm(`确定要删除配置 "${configName}" 吗？`)) return;
-    
-    delete apiConfigs[configName];
-    currentConfigName = Object.keys(apiConfigs)[0];
-    
-    // 保存到存储并应用新配置
-    chrome.storage.sync.set({ 
-      apiConfigs: apiConfigs,
-      currentApiConfig: currentConfigName
-    }, () => {
-      updateConfigSelect();
-      applyConfig(currentConfigName);
-      // 同时更新当前使用的 API 配置
-      const config = apiConfigs[currentConfigName];
-      chrome.storage.sync.set({
-        apiEndpoint: config.endpoint,
-        apiKey: config.apiKey,
-        modelName: config.model
+    chrome.storage.sync.get('apiNodes', (result) => {
+      const nodes = result.apiNodes || [];
+
+      if (editingNodeId) {
+        // 更新现有节点
+        const index = nodes.findIndex(n => n.id === editingNodeId);
+        if (index !== -1) {
+          nodes[index] = { ...nodes[index], name, endpoint, apiKey, model, rateLimit };
+        }
+      } else {
+        // 添加新节点
+        const newNode = {
+          id: 'node_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9),
+          name,
+          endpoint,
+          apiKey,
+          model,
+          enabled: true,
+          priority: nodes.length,
+          rateLimit
+        };
+        nodes.push(newNode);
+      }
+
+      chrome.storage.sync.set({ apiNodes: nodes }, () => {
+        closeNodeModal();
+        loadApiNodes();
       });
-      showConfigToast(`配置 "${configName}" 已删除`);
     });
   }
 
-  // 显示配置操作提示
-  function showConfigToast(message, isError = false) {
-    elements.testResult.textContent = message;
-    elements.testResult.className = isError ? 'test-result error' : 'test-result success';
-    setTimeout(() => {
-      elements.testResult.textContent = '';
-      elements.testResult.className = 'test-result';
-    }, 2000);
+  // 删除节点
+  function deleteNode(nodeId) {
+    if (!confirm('确定要删除这个节点吗？')) return;
+
+    chrome.storage.sync.get('apiNodes', (result) => {
+      const nodes = (result.apiNodes || []).filter(n => n.id !== nodeId);
+
+      // 重新计算优先级
+      nodes.forEach((node, index) => {
+        node.priority = index;
+      });
+
+      chrome.storage.sync.set({ apiNodes: nodes }, () => {
+        // 清理节点状态
+        chrome.storage.local.get('apiNodeStatuses', (localResult) => {
+          const statuses = (localResult.apiNodeStatuses || []).filter(s => s.nodeId !== nodeId);
+          chrome.storage.local.set({ apiNodeStatuses: statuses });
+        });
+        loadApiNodes();
+      });
+    });
+  }
+
+  // 切换节点启用状态
+  function toggleNode(nodeId, enabled) {
+    chrome.storage.sync.get('apiNodes', (result) => {
+      const nodes = result.apiNodes || [];
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        node.enabled = enabled;
+        chrome.storage.sync.set({ apiNodes: nodes }, loadApiNodes);
+      }
+    });
+  }
+
+  // 测试节点连接
+  function testNodeConnection() {
+    const endpoint = elements.nodeEndpointInput.value.trim();
+    const apiKey = elements.nodeApiKeyInput.value.trim();
+    const model = elements.nodeModelInput.value.trim();
+
+    if (!endpoint || !model) {
+      elements.nodeTestResult.textContent = '请先填写端点和模型';
+      elements.nodeTestResult.className = 'test-result error';
+      return;
+    }
+
+    elements.testNodeBtn.disabled = true;
+    elements.nodeTestResult.textContent = '测试中...';
+    elements.nodeTestResult.className = 'test-result';
+
+    chrome.runtime.sendMessage({
+      action: 'testApi',
+      endpoint,
+      apiKey,
+      model
+    }, (response) => {
+      elements.testNodeBtn.disabled = false;
+      if (response?.success) {
+        elements.nodeTestResult.textContent = '✓ 连接成功';
+        elements.nodeTestResult.className = 'test-result success';
+      } else {
+        elements.nodeTestResult.textContent = '✗ ' + (response?.message || '连接失败');
+        elements.nodeTestResult.className = 'test-result error';
+      }
+    });
+  }
+
+  // 快捷测试节点连接（从节点列表直接测试）
+  function quickTestNode(nodeId, btn) {
+    // 获取节点配置
+    chrome.storage.sync.get('apiNodes', (result) => {
+      const nodes = result.apiNodes || [];
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) return;
+
+      const { endpoint, apiKey, model } = node;
+      if (!endpoint || !model) return;
+
+      // 获取按钮和卡片元素
+      const card = btn.closest('.api-node-card');
+      const statusIndicator = card?.querySelector('.api-node-status');
+      const testIcon = btn.querySelector('.test-icon');
+      const loadingIcon = btn.querySelector('.loading-icon');
+
+      // 显示加载状态
+      btn.disabled = true;
+      if (testIcon) testIcon.style.display = 'none';
+      if (loadingIcon) loadingIcon.style.display = 'block';
+
+      chrome.runtime.sendMessage({
+        action: 'testApi',
+        endpoint,
+        apiKey,
+        model
+      }, (response) => {
+        // 恢复按钮状态
+        btn.disabled = false;
+        if (testIcon) testIcon.style.display = 'block';
+        if (loadingIcon) loadingIcon.style.display = 'none';
+
+        // 更新状态指示器
+        if (statusIndicator) {
+          statusIndicator.classList.remove('healthy', 'error', 'unknown', 'disabled');
+          if (response?.success) {
+            statusIndicator.classList.add('healthy');
+            statusIndicator.title = '正常';
+          } else {
+            statusIndicator.classList.add('error');
+            statusIndicator.title = response?.message || '连接失败';
+          }
+        }
+
+        // 更新节点状态存储
+        chrome.storage.local.get('apiNodeStatuses', (localResult) => {
+          const statuses = localResult.apiNodeStatuses || [];
+          const existingIndex = statuses.findIndex(s => s.nodeId === nodeId);
+          const newStatus = {
+            nodeId,
+            status: response?.success ? 'healthy' : 'error',
+            lastError: response?.success ? null : (response?.message || '连接失败'),
+            lastCheck: Date.now()
+          };
+
+          if (existingIndex >= 0) {
+            statuses[existingIndex] = newStatus;
+          } else {
+            statuses.push(newStatus);
+          }
+
+          chrome.storage.local.set({ apiNodeStatuses: statuses });
+        });
+      });
+    });
+  }
+
+  // 应用预设配置
+  function applyPreset(presetKey) {
+    const preset = API_PRESETS[presetKey];
+    if (preset) {
+      elements.nodeNameInput.value = preset.name;
+      elements.nodeEndpointInput.value = preset.endpoint;
+      elements.nodeModelInput.value = preset.model;
+      // 不覆盖 API Key
+    }
+  }
+
+  // 绑定节点管理事件
+  function bindNodeEvents() {
+    // 添加节点按钮
+    elements.addNodeBtn?.addEventListener('click', () => openNodeModal());
+
+    // 关闭弹窗
+    elements.nodeModalClose?.addEventListener('click', closeNodeModal);
+    elements.cancelNodeBtn?.addEventListener('click', closeNodeModal);
+    elements.nodeModalOverlay?.addEventListener('click', (e) => {
+      if (e.target === elements.nodeModalOverlay) closeNodeModal();
+    });
+
+    // 保存节点
+    elements.saveNodeBtn?.addEventListener('click', saveNode);
+
+    // 测试连接
+    elements.testNodeBtn?.addEventListener('click', testNodeConnection);
+
+    // 切换密钥可见性
+    elements.toggleNodeApiKey?.addEventListener('click', () => {
+      const type = elements.nodeApiKeyInput.type === 'password' ? 'text' : 'password';
+      elements.nodeApiKeyInput.type = type;
+    });
+
+    // 预设按钮
+    elements.presetBtns?.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const preset = btn.dataset.preset;
+        if (preset) applyPreset(preset);
+      });
+    });
+
+    // 节点列表点击事件（事件委托）
+    elements.apiNodesList?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+
+      const action = btn.dataset.action;
+      const nodeId = btn.dataset.nodeId;
+
+      switch (action) {
+        case 'edit':
+          openNodeModal(nodeId);
+          break;
+        case 'delete':
+          deleteNode(nodeId);
+          break;
+        case 'toggle':
+          toggleNode(nodeId, btn.checked);
+          break;
+        case 'test':
+          quickTestNode(nodeId, btn);
+          break;
+      }
+    });
+
+    // 切换开关的 change 事件
+    elements.apiNodesList?.addEventListener('change', (e) => {
+      if (e.target.dataset.action === 'toggle') {
+        const nodeId = e.target.dataset.nodeId;
+        toggleNode(nodeId, e.target.checked);
+      }
+    });
   }
 
   // 加载配置
   async function loadSettings() {
-    // 先加载 API 配置列表
-    loadApiConfigs(() => {
-      // 应用当前选中的配置
-      if (currentConfigName && apiConfigs[currentConfigName]) {
-        applyConfig(currentConfigName);
-      }
-    });
-    
+    // 加载 API 节点列表
+    loadApiNodes();
+
     chrome.storage.sync.get(null, (result) => {
       // 主题
       const theme = result.theme || 'dark';
@@ -831,13 +1226,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         radio.checked = radio.value === theme;
       });
 
-      // API 配置（如果没有配置列表，使用直接存储的值作为后备）
-      if (!result.apiConfigs) {
-        elements.apiEndpoint.value = result.apiEndpoint || DEFAULT_API_CONFIGS['DeepSeek'].endpoint;
-        elements.apiKey.value = result.apiKey || '';
-        elements.modelName.value = result.modelName || DEFAULT_API_CONFIGS['DeepSeek'].model;
-      }
-      
+      // 速率限制设置
+      const rateLimitEnabled = result.rateLimitEnabled ?? false;
+      elements.rateLimitEnabled.checked = rateLimitEnabled;
+      elements.rateLimitOptions.style.display = rateLimitEnabled ? 'block' : 'none';
+      elements.globalRateLimit.value = result.globalRateLimit || 60;
+
       // 学习偏好
       elements.nativeLanguage.value = result.nativeLanguage || 'zh-CN';
       elements.targetLanguage.value = result.targetLanguage || 'en';
@@ -1198,9 +1592,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function saveSettings() {
     const settings = {
       theme: document.querySelector('input[name="theme"]:checked').value,
-      apiEndpoint: elements.apiEndpoint.value.trim(),
-      apiKey: elements.apiKey.value.trim(),
-      modelName: elements.modelName.value.trim(),
+      // 速率限制设置
+      rateLimitEnabled: elements.rateLimitEnabled.checked,
+      globalRateLimit: parseInt(elements.globalRateLimit.value) || 60,
+      // 学习偏好
       nativeLanguage: elements.nativeLanguage.value,
       targetLanguage: elements.targetLanguage.value,
       difficultyLevel: CEFR_LEVELS[elements.difficultyLevel.value],
@@ -1239,16 +1634,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   function addAutoSaveListeners() {
     // 文本输入框 - 失焦时保存
     const textInputs = [
-      elements.apiEndpoint,
-      elements.apiKey,
-      elements.modelName,
       elements.excludedSitesInput,
       elements.allowedSitesInput
-    ];
+    ].filter(Boolean);
 
     textInputs.forEach(input => {
       input.addEventListener('blur', () => debouncedSave());
       input.addEventListener('change', () => debouncedSave());
+    });
+
+    // 速率限制设置
+    elements.rateLimitEnabled?.addEventListener('change', async () => {
+      elements.rateLimitOptions.style.display = elements.rateLimitEnabled.checked ? 'block' : 'none';
+      // 先保存设置，再刷新节点列表
+      await saveSettings();
+      loadApiNodes();
+    });
+
+    elements.globalRateLimit?.addEventListener('change', async () => {
+      await saveSettings();
+      loadApiNodes();
     });
 
     // 下拉框 - 改变时保存
@@ -1415,76 +1820,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 监听 hash 变化（浏览器前进后退）
     window.addEventListener('hashchange', loadSectionFromHash);
 
-    // 配置选择器
-    elements.apiConfigSelect.addEventListener('change', () => {
-      const selectedValue = elements.apiConfigSelect.value;
-      applyConfig(selectedValue);
-      // 切换配置时保存当前使用的配置
-      if (apiConfigs[selectedValue]) {
-        chrome.storage.sync.set({ 
-          currentApiConfig: selectedValue,
-          apiEndpoint: elements.apiEndpoint.value,
-          apiKey: elements.apiKey.value,
-          modelName: elements.modelName.value
-        });
-      }
-    });
-
-    // 新建配置按钮
-    elements.newConfigBtn.addEventListener('click', () => {
-      // 添加临时的"新建配置"选项并选中
-      const select = elements.apiConfigSelect;
-      let newOption = select.querySelector('option[value="_new"]');
-      if (!newOption) {
-        newOption = document.createElement('option');
-        newOption.value = '_new';
-        newOption.textContent = '— 新建配置 —';
-        select.insertBefore(newOption, select.firstChild);
-      }
-      select.value = '_new';
-      
-      elements.configName.value = '';
-      elements.apiEndpoint.value = '';
-      elements.apiKey.value = '';
-      elements.modelName.value = '';
-      currentConfigName = '';
-      elements.configName.focus();
-    });
-
-    // 保存配置按钮
-    elements.saveConfigBtn.addEventListener('click', saveCurrentConfig);
-    
-    // 删除配置按钮
-    elements.deleteConfigBtn.addEventListener('click', deleteCurrentConfig);
-
-    // 切换 API 密钥可见性
-    elements.toggleApiKey.addEventListener('click', () => {
-      const type = elements.apiKey.type === 'password' ? 'text' : 'password';
-      elements.apiKey.type = type;
-    });
-
-    // 测试连接
-    elements.testConnectionBtn.addEventListener('click', async () => {
-      elements.testConnectionBtn.disabled = true;
-      elements.testResult.textContent = '测试中...';
-      elements.testResult.className = 'test-result';
-
-      chrome.runtime.sendMessage({
-        action: 'testApi',
-        endpoint: elements.apiEndpoint.value,
-        apiKey: elements.apiKey.value,
-        model: elements.modelName.value
-      }, (response) => {
-        elements.testConnectionBtn.disabled = false;
-        if (response?.success) {
-          elements.testResult.textContent = '✓ 连接成功';
-          elements.testResult.className = 'test-result success';
-        } else {
-          elements.testResult.textContent = '✗ ' + (response?.message || '连接失败');
-          elements.testResult.className = 'test-result error';
-        }
-      });
-    });
+    // 绑定节点管理事件
+    bindNodeEvents();
 
     // 难度滑块
     elements.difficultyLevel.addEventListener('input', updateDifficultyLabel);
@@ -1643,10 +1980,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           ttsRate: syncData.ttsRate,
           siteMode: syncData.siteMode,
           excludedSites: syncData.excludedSites,
-          allowedSites: syncData.allowedSites
+          allowedSites: syncData.allowedSites,
+          apiNodes: syncData.apiNodes
         };
       }
-      
+
       if (elements.exportWords.checked) {
         // 词汇列表存储在 local 中
         const localWords = await new Promise(resolve => chrome.storage.local.get(['learnedWords', 'memorizeList'], resolve));
