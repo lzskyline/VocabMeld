@@ -269,6 +269,111 @@
             </div>
           </div>
         </div>
+
+        <!-- Edge TTS 云端语音服务 -->
+        <div class="form-group edge-tts-section">
+          <label>Edge TTS 云端语音</label>
+          <p class="help-text">使用 Edge TTS 云端服务获得更自然的发音效果。需要自行部署服务端：<a href="https://github.com/snakeying/edgetts-cloudflare" target="_blank">edgetts-cloudflare</a></p>
+
+          <div class="toggle-item edge-tts-toggle">
+            <div class="toggle-info">
+              <span class="toggle-title">启用 Edge TTS</span>
+              <span class="toggle-desc">使用云端语音服务替代系统语音</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="edgeTtsEnabled">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="edge-tts-config" id="edgeTtsConfig" style="display: none;">
+            <div class="voice-settings" style="margin-top: 16px;">
+              <div class="voice-setting-row">
+                <label for="edgeTtsEndpoint">服务端点</label>
+                <input type="url" id="edgeTtsEndpoint" placeholder="https://your-worker.workers.dev/" style="flex: 1;">
+              </div>
+              <div class="voice-setting-row">
+                <label for="edgeTtsApiKey">API 密钥</label>
+                <div class="input-with-toggle" style="flex: 1;">
+                  <input type="password" id="edgeTtsApiKey" placeholder="可选">
+                  <button type="button" class="toggle-visibility" id="toggleEdgeTtsApiKey">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                      <path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="voice-setting-row">
+                <label for="edgeTtsVoice">声音</label>
+                <select id="edgeTtsVoice" style="flex: 1;">
+                  <optgroup label="English">
+                    <option value="en-US-AriaNeural">Aria (温柔女声)</option>
+                    <option value="en-US-JennyNeural">Jenny (标准女声)</option>
+                    <option value="en-US-GuyNeural">Guy (标准男声)</option>
+                    <option value="en-US-ChristopherNeural">Christopher (沉稳男声)</option>
+                    <option value="en-GB-SoniaNeural">Sonia (英式女声)</option>
+                    <option value="en-GB-RyanNeural">Ryan (英式男声)</option>
+                  </optgroup>
+                  <optgroup label="简体中文">
+                    <option value="zh-CN-XiaoxiaoNeural">晓晓 (温柔女声)</option>
+                    <option value="zh-CN-YunxiNeural">云希 (活泼男声)</option>
+                    <option value="zh-CN-YunjianNeural">云健 (标准男声)</option>
+                    <option value="zh-CN-XiaoyiNeural">晓伊 (甜美女声)</option>
+                  </optgroup>
+                  <optgroup label="繁體中文">
+                    <option value="zh-TW-HsiaoChenNeural">曉臻 (女声)</option>
+                    <option value="zh-TW-YunJheNeural">雲哲 (男声)</option>
+                    <option value="zh-TW-HsiaoYuNeural">曉雨 (女声)</option>
+                  </optgroup>
+                  <optgroup label="日本語">
+                    <option value="ja-JP-NanamiNeural">Nanami (女声)</option>
+                    <option value="ja-JP-KeitaNeural">Keita (男声)</option>
+                  </optgroup>
+                  <optgroup label="한국어">
+                    <option value="ko-KR-SunHiNeural">SunHi (女声)</option>
+                    <option value="ko-KR-InJoonNeural">InJoon (男声)</option>
+                  </optgroup>
+                  <optgroup label="Français">
+                    <option value="fr-FR-DeniseNeural">Denise (女声)</option>
+                    <option value="fr-FR-HenriNeural">Henri (男声)</option>
+                  </optgroup>
+                  <optgroup label="Deutsch">
+                    <option value="de-DE-KatjaNeural">Katja (女声)</option>
+                    <option value="de-DE-ConradNeural">Conrad (男声)</option>
+                  </optgroup>
+                  <optgroup label="Español">
+                    <option value="es-ES-ElviraNeural">Elvira (女声)</option>
+                    <option value="es-ES-AlvaroNeural">Alvaro (男声)</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="voice-setting-row">
+                <label for="edgeTtsSpeed">语速 (<span id="edgeTtsSpeedValue">1.0</span>x)</label>
+                <input type="range" id="edgeTtsSpeed" min="0.5" max="2" step="0.1" value="1.0" style="flex: 1;">
+              </div>
+              <div class="voice-setting-row">
+                <label></label>
+                <div style="display: flex; gap: 8px; flex: 1;">
+                  <button type="button" class="btn btn-secondary" id="testEdgeTtsBtn" style="flex: 1;">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                      <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
+                    </svg>
+                    测试连接
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="testEdgeTtsVoiceBtn" style="flex: 1;">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                      <path fill="currentColor" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"/>
+                    </svg>
+                    测试发音
+                  </button>
+                </div>
+              </div>
+              <div class="voice-setting-row" style="border-bottom: none;">
+                <span class="edge-tts-result" id="edgeTtsResult"></span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 行为设置 -->

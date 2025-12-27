@@ -90,6 +90,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     ttsRateValue: document.getElementById('ttsRateValue'),
     testVoiceBtn: document.getElementById('testVoiceBtn'),
 
+    // Edge TTS
+    edgeTtsEnabled: document.getElementById('edgeTtsEnabled'),
+    edgeTtsConfig: document.getElementById('edgeTtsConfig'),
+    edgeTtsEndpoint: document.getElementById('edgeTtsEndpoint'),
+    edgeTtsApiKey: document.getElementById('edgeTtsApiKey'),
+    toggleEdgeTtsApiKey: document.getElementById('toggleEdgeTtsApiKey'),
+    edgeTtsVoice: document.getElementById('edgeTtsVoice'),
+    edgeTtsSpeed: document.getElementById('edgeTtsSpeed'),
+    edgeTtsSpeedValue: document.getElementById('edgeTtsSpeedValue'),
+    testEdgeTtsBtn: document.getElementById('testEdgeTtsBtn'),
+    testEdgeTtsVoiceBtn: document.getElementById('testEdgeTtsVoiceBtn'),
+    edgeTtsResult: document.getElementById('edgeTtsResult'),
+
     // 站点规则
     siteModeRadios: document.querySelectorAll('input[name="siteMode"]'),
     excludedSitesGroup: document.getElementById('excludedSitesGroup'),
@@ -930,7 +943,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 发音设置
       elements.ttsRate.value = result.ttsRate || 1.0;
       elements.ttsRateValue.textContent = (result.ttsRate || 1.0).toFixed(1);
-      
+
+      // Edge TTS 设置
+      elements.edgeTtsEnabled.checked = result.edgeTtsEnabled || false;
+      elements.edgeTtsEndpoint.value = result.edgeTtsEndpoint || '';
+      elements.edgeTtsApiKey.value = result.edgeTtsApiKey || '';
+      elements.edgeTtsVoice.value = result.edgeTtsVoice || 'en-US-AriaNeural';
+      elements.edgeTtsSpeed.value = result.edgeTtsSpeed || 1.0;
+      elements.edgeTtsSpeedValue.textContent = (result.edgeTtsSpeed || 1.0).toFixed(1);
+      updateEdgeTtsConfigVisibility();
+
       // 加载可用声音列表
       loadVoices(result.ttsVoice || '');
       
@@ -1214,6 +1236,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       translationStyle: document.querySelector('input[name="translationStyle"]:checked').value,
       ttsVoice: elements.ttsVoice.value,
       ttsRate: parseFloat(elements.ttsRate.value),
+      // Edge TTS 设置
+      edgeTtsEnabled: elements.edgeTtsEnabled.checked,
+      edgeTtsEndpoint: elements.edgeTtsEndpoint.value.trim(),
+      edgeTtsApiKey: elements.edgeTtsApiKey.value.trim(),
+      edgeTtsVoice: elements.edgeTtsVoice.value,
+      edgeTtsSpeed: parseFloat(elements.edgeTtsSpeed.value),
       siteMode: document.querySelector('input[name="siteMode"]:checked').value,
       excludedSites: elements.excludedSitesInput.value.split('\n').filter(s => s.trim()),
       allowedSites: elements.allowedSitesInput.value.split('\n').filter(s => s.trim()),
@@ -1352,13 +1380,138 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
       const testText = testTexts[targetLang] || testTexts['en'];
       const lang = langCodes[targetLang] || 'en-US';
-      
-      chrome.runtime.sendMessage({ 
-        action: 'speak', 
-        text: testText, 
+
+      chrome.runtime.sendMessage({
+        action: 'speak',
+        text: testText,
         lang: lang
       });
     });
+
+    // Edge TTS 设置
+    elements.edgeTtsEnabled.addEventListener('change', () => {
+      updateEdgeTtsConfigVisibility();
+      debouncedSave(200);
+    });
+
+    elements.edgeTtsEndpoint.addEventListener('change', () => debouncedSave(500));
+    elements.edgeTtsApiKey.addEventListener('change', () => debouncedSave(500));
+    elements.edgeTtsVoice.addEventListener('change', () => debouncedSave(200));
+
+    elements.edgeTtsSpeed.addEventListener('input', () => {
+      elements.edgeTtsSpeedValue.textContent = parseFloat(elements.edgeTtsSpeed.value).toFixed(1);
+    });
+    elements.edgeTtsSpeed.addEventListener('change', () => debouncedSave(200));
+
+    // Edge TTS API 密钥显示切换
+    elements.toggleEdgeTtsApiKey.addEventListener('click', () => {
+      const input = elements.edgeTtsApiKey;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    // 测试 Edge TTS 连接
+    elements.testEdgeTtsBtn.addEventListener('click', async () => {
+      const endpoint = elements.edgeTtsEndpoint.value.trim();
+      const apiKey = elements.edgeTtsApiKey.value.trim();
+      const voice = elements.edgeTtsVoice.value;
+
+      if (!endpoint) {
+        showEdgeTtsResult('请填写服务端点', 'error');
+        return;
+      }
+
+      showEdgeTtsResult('测试中...', '');
+      try {
+        chrome.runtime.sendMessage({
+          action: 'testEdgeTts',
+          endpoint: endpoint,
+          apiKey: apiKey,
+          voice: voice
+        }, (response) => {
+          if (response && response.success) {
+            showEdgeTtsResult('连接成功！', 'success');
+          } else {
+            showEdgeTtsResult('连接失败: ' + (response?.message || '未知错误'), 'error');
+          }
+        });
+      } catch (error) {
+        showEdgeTtsResult('连接失败: ' + error.message, 'error');
+      }
+    });
+
+    // 测试 Edge TTS 发音
+    elements.testEdgeTtsVoiceBtn.addEventListener('click', async () => {
+      const endpoint = elements.edgeTtsEndpoint.value.trim();
+      const apiKey = elements.edgeTtsApiKey.value.trim();
+      const voice = elements.edgeTtsVoice.value;
+      const speed = parseFloat(elements.edgeTtsSpeed.value) || 1.0;
+
+      if (!endpoint) {
+        showEdgeTtsResult('请填写服务端点', 'error');
+        return;
+      }
+
+      // 根据选择的声音选择合适的测试文本
+      const testTexts = {
+        'en': 'Hello, this is an Edge TTS voice test.',
+        'zh-CN': '你好，这是 Edge TTS 语音测试。',
+        'zh-TW': '你好，這是 Edge TTS 語音測試。',
+        'ja': 'こんにちは、これはEdge TTS音声テストです。',
+        'ko': '안녕하세요, Edge TTS 음성 테스트입니다.',
+        'fr': 'Bonjour, ceci est un test de voix Edge TTS.',
+        'de': 'Hallo, dies ist ein Edge TTS Sprachtest.',
+        'es': 'Hola, esta es una prueba de voz de Edge TTS.'
+      };
+
+      const voiceLang = voice.split('-').slice(0, 2).join('-');
+      let testText = testTexts['en'];
+      if (voiceLang.startsWith('zh-CN')) testText = testTexts['zh-CN'];
+      else if (voiceLang.startsWith('zh-TW')) testText = testTexts['zh-TW'];
+      else if (voiceLang.startsWith('ja')) testText = testTexts['ja'];
+      else if (voiceLang.startsWith('ko')) testText = testTexts['ko'];
+      else if (voiceLang.startsWith('fr')) testText = testTexts['fr'];
+      else if (voiceLang.startsWith('de')) testText = testTexts['de'];
+      else if (voiceLang.startsWith('es')) testText = testTexts['es'];
+
+      showEdgeTtsResult('播放中...', '');
+      try {
+        chrome.runtime.sendMessage({
+          action: 'speakEdgeTts',
+          text: testText,
+          endpoint: endpoint,
+          apiKey: apiKey,
+          voice: voice,
+          speed: speed
+        }, (response) => {
+          if (response && response.success) {
+            showEdgeTtsResult('播放完成', 'success');
+          } else {
+            showEdgeTtsResult('播放失败: ' + (response?.error || '未知错误'), 'error');
+          }
+        });
+      } catch (error) {
+        showEdgeTtsResult('播放失败: ' + error.message, 'error');
+      }
+    });
+  }
+
+  // Edge TTS 配置区域显示/隐藏
+  function updateEdgeTtsConfigVisibility() {
+    const enabled = elements.edgeTtsEnabled.checked;
+    elements.edgeTtsConfig.style.display = enabled ? 'block' : 'none';
+  }
+
+  // 显示 Edge TTS 结果消息
+  function showEdgeTtsResult(message, type) {
+    elements.edgeTtsResult.textContent = message;
+    elements.edgeTtsResult.className = 'edge-tts-result';
+    if (type === 'success') {
+      elements.edgeTtsResult.style.color = 'var(--success)';
+    } else if (type === 'error') {
+      elements.edgeTtsResult.style.color = 'var(--danger)';
+    } else {
+      elements.edgeTtsResult.style.color = 'var(--text-muted)';
+    }
   }
 
   // 更新难度标签
