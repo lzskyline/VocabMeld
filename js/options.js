@@ -18,6 +18,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+  function normalizeDifficultyRange(range, fallbackMin = 'B1') {
+    const ensureLevel = (level, defaultLevel) => CEFR_LEVELS.includes(level) ? level : defaultLevel;
+    const normalizedRange = (range && typeof range === 'object') ? range : {};
+    const minLevel = ensureLevel(normalizedRange.min, ensureLevel(fallbackMin, 'B1'));
+    const maxLevel = ensureLevel(normalizedRange.max, 'C2');
+    let minIndex = CEFR_LEVELS.indexOf(minLevel);
+    let maxIndex = CEFR_LEVELS.indexOf(maxLevel);
+    if (minIndex < 0) minIndex = 0;
+    if (maxIndex < 0) maxIndex = CEFR_LEVELS.length - 1;
+    if (maxIndex < minIndex) {
+      maxIndex = minIndex;
+    }
+    return {
+      minLevel: CEFR_LEVELS[minIndex],
+      maxLevel: CEFR_LEVELS[maxIndex],
+      minIndex,
+      maxIndex
+    };
+  }
+
   // 防抖保存函数
   let saveTimeout;
   function debouncedSave(delay = 500) {
@@ -47,8 +67,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 学习偏好
     nativeLanguage: document.getElementById('nativeLanguage'),
     targetLanguage: document.getElementById('targetLanguage'),
-    difficultyLevel: document.getElementById('difficultyLevel'),
+    difficultyRangeMin: document.getElementById('difficultyMin'),
+    difficultyRangeMax: document.getElementById('difficultyMax'),
+    difficultyRangeProgress: document.getElementById('difficultyRangeProgress'),
     selectedDifficulty: document.getElementById('selectedDifficulty'),
+    difficultyPresetButtons: document.querySelectorAll('.difficulty-preset'),
     intensityRadios: document.querySelectorAll('input[name="intensity"]'),
     processModeRadios: document.querySelectorAll('input[name="processMode"]'),
 
@@ -842,8 +865,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       elements.nativeLanguage.value = result.nativeLanguage || 'zh-CN';
       elements.targetLanguage.value = result.targetLanguage || 'en';
       
-      const diffIdx = CEFR_LEVELS.indexOf(result.difficultyLevel || 'B1');
-      elements.difficultyLevel.value = diffIdx >= 0 ? diffIdx : 2;
+      const storedRange = normalizeDifficultyRange(result.difficultyRange, result.difficultyLevel || 'B1');
+      if (elements.difficultyRangeMin) {
+        elements.difficultyRangeMin.value = storedRange.minIndex;
+      }
+      if (elements.difficultyRangeMax) {
+        elements.difficultyRangeMax.value = storedRange.maxIndex;
+      }
       updateDifficultyLabel();
       
       const intensity = result.intensity || 'medium';
@@ -1196,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 保存设置（静默保存）
   async function saveSettings() {
+    const currentRange = getCurrentDifficultyRange();
     const settings = {
       theme: document.querySelector('input[name="theme"]:checked').value,
       apiEndpoint: elements.apiEndpoint.value.trim(),
@@ -1203,7 +1232,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       modelName: elements.modelName.value.trim(),
       nativeLanguage: elements.nativeLanguage.value,
       targetLanguage: elements.targetLanguage.value,
-      difficultyLevel: CEFR_LEVELS[elements.difficultyLevel.value],
+      difficultyLevel: currentRange.minLevel,
+      difficultyRange: {
+        min: currentRange.minLevel,
+        max: currentRange.maxLevel
+      },
       intensity: document.querySelector('input[name="intensity"]:checked').value,
       processMode: document.querySelector('input[name="processMode"]:checked')?.value || 'both',
       autoProcess: elements.autoProcess.checked,
@@ -1274,9 +1307,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       loadVoices(elements.ttsVoice.value, true);
     });
 
-    // 滑块 - 改变时保存
-    elements.difficultyLevel.addEventListener('input', () => debouncedSave(200));
-    elements.difficultyLevel.addEventListener('change', () => debouncedSave(200));
+    if (elements.difficultyRangeMin && elements.difficultyRangeMax) {
+      const handleInput = (target) => handleDifficultyRangeInput(target);
+      elements.difficultyRangeMin.addEventListener('input', () => handleInput(elements.difficultyRangeMin));
+      elements.difficultyRangeMax.addEventListener('input', () => handleInput(elements.difficultyRangeMax));
+      elements.difficultyRangeMin.addEventListener('change', () => handleInput(elements.difficultyRangeMin));
+      elements.difficultyRangeMax.addEventListener('change', () => handleInput(elements.difficultyRangeMax));
+    }
 
     // 单选按钮 - 改变时保存
     elements.intensityRadios.forEach(radio => {
@@ -1318,6 +1355,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.dictionaryTypeRadios.forEach(radio => {
       radio.addEventListener('change', () => debouncedSave(200));
     });
+    
+    if (elements.difficultyPresetButtons?.length) {
+      elements.difficultyPresetButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const minIdx = parseInt(btn.dataset.min, 10);
+          const maxIdx = parseInt(btn.dataset.max, 10);
+          if (!Number.isNaN(minIdx)) {
+            elements.difficultyRangeMin.value = minIdx;
+          }
+          if (!Number.isNaN(maxIdx)) {
+            elements.difficultyRangeMax.value = maxIdx;
+          }
+          updateDifficultyLabel();
+          debouncedSave(200);
+        });
+      });
+    }
 
     // 发音设置
     elements.ttsVoice.addEventListener('change', () => debouncedSave(200));
@@ -1361,10 +1415,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function getCurrentDifficultyRange() {
+    const minValue = parseInt(elements.difficultyRangeMin?.value, 10);
+    const maxValue = parseInt(elements.difficultyRangeMax?.value, 10);
+    const minIndex = Number.isFinite(minValue) ? minValue : 0;
+    const maxIndex = Number.isFinite(maxValue) ? maxValue : CEFR_LEVELS.length - 1;
+    const safeMin = Math.max(0, Math.min(minIndex, maxIndex));
+    const safeMax = Math.min(CEFR_LEVELS.length - 1, Math.max(minIndex, maxIndex));
+    return {
+      minIndex: safeMin,
+      maxIndex: safeMax,
+      minLevel: CEFR_LEVELS[safeMin] || 'A1',
+      maxLevel: CEFR_LEVELS[safeMax] || 'C2'
+    };
+  }
+
+  function handleDifficultyRangeInput(changedElement) {
+    if (!elements.difficultyRangeMin || !elements.difficultyRangeMax) return;
+    let minValue = parseInt(elements.difficultyRangeMin.value, 10);
+    let maxValue = parseInt(elements.difficultyRangeMax.value, 10);
+    if (Number.isNaN(minValue)) minValue = 0;
+    if (Number.isNaN(maxValue)) maxValue = CEFR_LEVELS.length - 1;
+    if (minValue > maxValue) {
+      if (changedElement === elements.difficultyRangeMin) {
+        minValue = maxValue;
+        elements.difficultyRangeMin.value = maxValue;
+      } else {
+        maxValue = minValue;
+        elements.difficultyRangeMax.value = minValue;
+      }
+    }
+    updateDifficultyLabel();
+    debouncedSave(200);
+  }
+
   // 更新难度标签
   function updateDifficultyLabel() {
-    const level = CEFR_LEVELS[elements.difficultyLevel.value];
-    elements.selectedDifficulty.textContent = level;
+    if (!elements.selectedDifficulty) return;
+    const range = getCurrentDifficultyRange();
+    elements.selectedDifficulty.textContent = 
+      range.minLevel === range.maxLevel ? range.minLevel : `${range.minLevel} - ${range.maxLevel}`;
+    
+    if (elements.difficultyRangeProgress) {
+      const steps = CEFR_LEVELS.length - 1 || 1;
+      const minPercent = (range.minIndex / steps) * 100;
+      const maxPercent = (range.maxIndex / steps) * 100;
+      elements.difficultyRangeProgress.style.left = `${minPercent}%`;
+      elements.difficultyRangeProgress.style.width = `${Math.max(0, maxPercent - minPercent)}%`;
+    }
+
+    if (elements.difficultyPresetButtons?.length) {
+      elements.difficultyPresetButtons.forEach(btn => {
+        const btnMin = parseInt(btn.dataset.min, 10);
+        const btnMax = parseInt(btn.dataset.max, 10);
+        if (btnMin === range.minIndex && btnMax === range.maxIndex) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
   }
 
   // 切换到指定页面
@@ -1485,9 +1595,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
     });
-
-    // 难度滑块
-    elements.difficultyLevel.addEventListener('input', updateDifficultyLabel);
 
     // 词汇标签切换
     elements.wordTabs.forEach(tab => {
@@ -1631,6 +1738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           nativeLanguage: syncData.nativeLanguage,
           targetLanguage: syncData.targetLanguage,
           difficultyLevel: syncData.difficultyLevel,
+          difficultyRange: syncData.difficultyRange,
           intensity: syncData.intensity,
           autoProcess: syncData.autoProcess,
           showPhonetic: syncData.showPhonetic,

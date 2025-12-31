@@ -104,8 +104,8 @@
     "description": "Target language selection"
   },
   "difficultyLevel": {
-    "message": "Difficulty Level",
-    "description": "Difficulty level selection"
+    "message": "Difficulty Range",
+    "description": "Difficulty range selection"
   },
   "replacementIntensity": {
     "message": "Replacement Intensity",

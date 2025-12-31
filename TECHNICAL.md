@@ -376,11 +376,15 @@ function detectLanguage(text) {
 ```javascript
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-// 只显示大于等于用户选择难度的词汇
-function isDifficultyCompatible(wordDifficulty, userDifficulty) {
+// 只显示落在用户选择的难度区间内的词汇
+function isDifficultyCompatible(wordDifficulty, difficultyRange) {
   const wordIdx = CEFR_LEVELS.indexOf(wordDifficulty);
-  const userIdx = CEFR_LEVELS.indexOf(userDifficulty);
-  return wordIdx >= userIdx;
+  if (!difficultyRange) return wordIdx >= 0;
+  const minIdx = CEFR_LEVELS.indexOf(difficultyRange.min || 'A1');
+  const maxIdx = CEFR_LEVELS.indexOf(difficultyRange.max || 'C2');
+  const start = Math.min(minIdx, maxIdx, CEFR_LEVELS.length - 1);
+  const end = Math.max(minIdx, maxIdx, 0);
+  return wordIdx >= start && wordIdx <= end;
 }
 ```
 
@@ -401,11 +405,14 @@ const INTENSITY_CONFIG = {
 ### 翻译请求 Prompt
 
 ```javascript
-function buildTranslationPrompt(text, sourceLang, targetLang, difficulty, maxWords) {
+function buildTranslationPrompt(text, sourceLang, targetLang, difficultyRange, maxWords) {
+  const label = difficultyRange.min === difficultyRange.max 
+    ? difficultyRange.min 
+    : `${difficultyRange.min}-${difficultyRange.max}`;
   return `You are a vocabulary learning assistant. Analyze the following text and select ${maxWords} vocabulary words to translate.
 
 Rules:
-1. Select words appropriate for ${difficulty} level learners (CEFR scale)
+1. Select vocabulary strictly within the ${label} CEFR range
 2. Avoid: proper nouns, numbers, URLs, code, single letters
 3. Prefer: common words with educational value
 4. For each word, provide:
@@ -528,6 +535,7 @@ interface ThemeConfig {
 | nativeLanguage | string | 母语 |
 | targetLanguage | string | 学习语言 |
 | difficultyLevel | string | 难度等级 |
+| difficultyRange | object | 难度区间 { min, max } |
 | intensity | string | 替换强度 |
 | autoProcess | boolean | 自动处理 |
 | showPhonetic | boolean | 显示音标 |

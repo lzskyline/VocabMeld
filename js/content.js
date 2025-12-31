@@ -76,10 +76,37 @@
   let currentTooltipElement = null; // 当前显示 tooltip 的元素
 
   // ============ 工具函数 ============
-  function isDifficultyCompatible(wordDifficulty, userDifficulty) {
-    const wordIdx = CEFR_LEVELS.indexOf(wordDifficulty);
-    const userIdx = CEFR_LEVELS.indexOf(userDifficulty);
-    return wordIdx >= userIdx;
+  function isDifficultyCompatible(wordDifficulty, difficultySetting) {
+    const levelToIndex = (level, fallbackIndex) => {
+      const idx = CEFR_LEVELS.indexOf(level);
+      return idx >= 0 ? idx : fallbackIndex;
+    };
+    const wordIdx = levelToIndex(wordDifficulty, CEFR_LEVELS.length - 1);
+    if (!difficultySetting) {
+      return true;
+    }
+    if (typeof difficultySetting === 'string') {
+      const userIdx = levelToIndex(difficultySetting, 0);
+      return wordIdx >= userIdx;
+    }
+    const minIdx = levelToIndex(difficultySetting.min || 'A1', 0);
+    const maxIdx = levelToIndex(difficultySetting.max || 'C2', CEFR_LEVELS.length - 1);
+    const start = Math.min(minIdx, maxIdx);
+    const end = Math.max(minIdx, maxIdx);
+    return wordIdx >= start && wordIdx <= end;
+  }
+
+  function normalizeDifficultyRange(storedRange, fallbackMin = 'B1') {
+    const ensureLevel = (level, defaultLevel) => CEFR_LEVELS.includes(level) ? level : defaultLevel;
+    const range = typeof storedRange === 'object' && storedRange !== null ? storedRange : {};
+    const minLevel = ensureLevel(range.min, ensureLevel(fallbackMin, 'B1'));
+    const maxLevel = ensureLevel(range.max, 'C2');
+    const minIdx = CEFR_LEVELS.indexOf(minLevel);
+    const maxIdx = CEFR_LEVELS.indexOf(maxLevel);
+    if (maxIdx >= minIdx) {
+      return { min: minLevel, max: maxLevel };
+    }
+    return { min: minLevel, max: minLevel };
   }
 
   function generateFingerprint(text, path = '') {
@@ -174,13 +201,19 @@
       chrome.storage.sync.get(null, (syncResult) => {
         // 从 local 获取词汇列表（避免 sync 的 8KB 限制）
         chrome.storage.local.get(['learnedWords', 'memorizeList'], (localResult) => {
+          const normalizedDifficultyRange = normalizeDifficultyRange(
+            syncResult.difficultyRange,
+            syncResult.difficultyLevel || 'B1'
+          );
+
           config = {
             apiEndpoint: syncResult.apiEndpoint || 'https://api.deepseek.com/chat/completions',
             apiKey: syncResult.apiKey || '',
             modelName: syncResult.modelName || 'deepseek-chat',
             nativeLanguage: syncResult.nativeLanguage || 'zh-CN',
             targetLanguage: syncResult.targetLanguage || 'en',
-            difficultyLevel: syncResult.difficultyLevel || 'B1',
+            difficultyLevel: normalizedDifficultyRange.min,
+            difficultyRange: normalizedDifficultyRange,
             intensity: syncResult.intensity || 'medium',
             processMode: syncResult.processMode || 'both',
             autoProcess: syncResult.autoProcess ?? false,
@@ -838,7 +871,7 @@
     // 过滤缓存结果（按难度，排除已学会单词）
     const filteredCached = cached
       .filter(c => 
-        isDifficultyCompatible(c.difficulty || 'B1', config.difficultyLevel) &&
+        isDifficultyCompatible(c.difficulty || 'B1', config.difficultyRange) &&
         !learnedWordsSet.has(c.word.toLowerCase())
       )
       .map(c => {
@@ -898,14 +931,20 @@
     // 异步调用 API，处理未缓存的词汇（不阻塞立即返回）
     const asyncPromise = (async () => {
       try {
+        const difficultyRangeLabel = config?.difficultyRange
+          ? (config.difficultyRange.min === config.difficultyRange.max
+            ? config.difficultyRange.min
+            : `${config.difficultyRange.min}-${config.difficultyRange.max}`)
+          : (config?.difficultyLevel || 'B1');
         const prompt = `你是一个语言学习助手。请分析以下文本，选择适合学习的词汇进行翻译。
 
 ## 规则：
 1. 选择约 ${aiTargetCount} 个词汇（实际返回数量可以根据文本内容灵活调整，但不要超过 ${maxReplacements * 2} 个）
-2. 优先选择：有学习价值的词汇、不同难度级别的词汇
-3. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
-4. 翻译倾向：结合上下文只翻译成最合适的词汇，而不是多个含义。
-5. 不要翻译专有名词、缩写、数字、代码等内容，也不要重复翻译已经是${targetLang}的内容。
+2. 仅选择 ${difficultyRangeLabel} 难度范围（CEFR）的词汇，跳过更简单或更困难的内容
+3. 优先选择：有学习价值且贴合上下文的词汇
+4. 翻译方向：从 ${sourceLang} 翻译到 ${targetLang}
+5. 翻译倾向：结合上下文只翻译成最合适的词汇，而不是多个含义
+6. 不要翻译专有名词、缩写、数字、代码等内容，也不要重复翻译已经是${targetLang}的内容。
 
 ## CEFR等级从简单到复杂依次为：A1-C2
 
@@ -1001,7 +1040,7 @@ ${filteredText}
         // 本地过滤：只保留符合用户难度设置的词汇，并过滤掉小于5个字符的英文单词
         const filteredResults = allResults.filter(item => {
           // 过滤难度级别
-          if (!isDifficultyCompatible(item.difficulty || 'B1', config.difficultyLevel)) {
+          if (!isDifficultyCompatible(item.difficulty || 'B1', config.difficultyRange)) {
             return false;
           }
           // 过滤小于5个字符的英文单词
@@ -1032,7 +1071,7 @@ ${filteredText}
             !immediateWords.has(c.word.toLowerCase()) && 
             !correctedResults.some(r => r.original.toLowerCase() === c.word.toLowerCase()) &&
             !currentLearnedWords.has(c.word.toLowerCase()) &&
-            isDifficultyCompatible(c.difficulty || 'B1', config.difficultyLevel)
+            isDifficultyCompatible(c.difficulty || 'B1', config.difficultyRange)
           )
           .map(c => {
             const idx = text.toLowerCase().indexOf(c.word.toLowerCase());
@@ -2511,7 +2550,7 @@ ${originalWord}
             updateUITheme();
           }
           // 难度、强度、样式或处理模式变化时，需要重新处理页面
-          if (changes.difficultyLevel || changes.intensity || changes.translationStyle || changes.processMode) {
+          if (changes.difficultyRange || changes.difficultyLevel || changes.intensity || changes.translationStyle || changes.processMode) {
             restoreAll(); // 先恢复页面（会清除 processedFingerprints）
             if (config.enabled) {
               processPage(); // 重新处理

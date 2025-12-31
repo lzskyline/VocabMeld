@@ -74,6 +74,10 @@ export const DEFAULT_CONFIG = {
   nativeLanguage: 'zh-CN',
   targetLanguage: 'en',
   difficultyLevel: 'B1',
+  difficultyRange: {
+    min: 'B1',
+    max: 'C2'
+  },
   intensity: 'medium',
   
   // 行为设置
@@ -125,11 +129,25 @@ export const SKIP_CLASSES = [
  * @param {string} userDifficulty - 用户设置难度 (A1-C2)
  * @returns {boolean}
  */
-export function isDifficultyCompatible(wordDifficulty, userDifficulty) {
-  const wordIdx = CEFR_LEVELS.indexOf(wordDifficulty);
-  const userIdx = CEFR_LEVELS.indexOf(userDifficulty);
-  // 只显示大于等于用户选择难度的词汇
-  return wordIdx >= userIdx;
+export function isDifficultyCompatible(wordDifficulty, difficultySetting) {
+  const levelToIndex = (level, fallbackIndex) => {
+    const idx = CEFR_LEVELS.indexOf(level);
+    return idx >= 0 ? idx : fallbackIndex;
+  };
+  const wordIdx = levelToIndex(wordDifficulty, CEFR_LEVELS.length - 1);
+
+  if (!difficultySetting) {
+    return true;
+  }
+
+  if (typeof difficultySetting === 'string') {
+    const userIdx = levelToIndex(difficultySetting, 0);
+    return wordIdx >= userIdx;
+  }
+
+  const minIdx = levelToIndex(difficultySetting.min || 'A1', 0);
+  const maxIdx = levelToIndex(difficultySetting.max || 'C2', CEFR_LEVELS.length - 1);
+  return wordIdx >= Math.min(minIdx, maxIdx) && wordIdx <= Math.max(minIdx, maxIdx);
 }
 
 /**
@@ -142,4 +160,3 @@ export function getLanguageName(code) {
   const lang = all.find(l => l.code === code);
   return lang ? lang.name : code;
 }
-

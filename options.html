@@ -195,19 +195,41 @@
         </div>
 
         <div class="form-group">
-          <label for="difficultyLevel">难度等级 (CEFR)</label>
+          <label>难度区间 (CEFR)</label>
           <div class="difficulty-selector">
-            <input type="range" id="difficultyLevel" min="0" max="5" value="2">
-            <div class="difficulty-labels">
-              <span>A1</span>
-              <span>A2</span>
-              <span>B1</span>
-              <span>B2</span>
-              <span>C1</span>
-              <span>C2</span>
+            <div class="difficulty-range">
+              <div class="difficulty-range-track">
+                <div class="difficulty-range-progress" id="difficultyRangeProgress"></div>
+                <input type="range" id="difficultyMin" min="0" max="5" value="2" step="1">
+                <input type="range" id="difficultyMax" min="0" max="5" value="5" step="1">
+              </div>
+              <div class="difficulty-labels">
+                <span>A1</span>
+                <span>A2</span>
+                <span>B1</span>
+                <span>B2</span>
+                <span>C1</span>
+                <span>C2</span>
+              </div>
+            </div>
+            <div class="difficulty-range-footer">
+              <p class="help-text">仅显示 <strong id="selectedDifficulty">B1 - C2</strong> 范围内的词汇，自动避开过于简单或困难的结果</p>
+              <div class="difficulty-presets">
+                <button type="button" class="difficulty-preset" data-min="0" data-max="2">
+                  <span class="preset-title">打基础</span>
+                  <span class="preset-range">A1-B1</span>
+                </button>
+                <button type="button" class="difficulty-preset" data-min="1" data-max="4">
+                  <span class="preset-title">均衡输入</span>
+                  <span class="preset-range">A2-C1</span>
+                </button>
+                <button type="button" class="difficulty-preset" data-min="3" data-max="5">
+                  <span class="preset-title">高阶挑战</span>
+                  <span class="preset-range">B2-C2</span>
+                </button>
+              </div>
             </div>
           </div>
-          <p class="help-text">选择 <strong id="selectedDifficulty">B1</strong> 等级，将显示该等级及以上难度的词汇</p>
         </div>
 
         <div class="form-group">
@@ -881,4 +903,3 @@
   <script src="js/options.js"></script>
 </body>
 </html>
-

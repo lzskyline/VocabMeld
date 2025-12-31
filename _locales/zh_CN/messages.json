@@ -104,8 +104,8 @@
     "description": "学习语言选择"
   },
   "difficultyLevel": {
-    "message": "难度等级",
-    "description": "难度等级选择"
+    "message": "难度区间",
+    "description": "难度区间选择"
   },
   "replacementIntensity": {
     "message": "替换强度",

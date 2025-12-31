@@ -16,6 +16,7 @@ chrome.runtime.onInstalled.addListener((details) => {
       nativeLanguage: 'zh-CN',
       targetLanguage: 'en',
       difficultyLevel: 'B1',
+      difficultyRange: { min: 'B1', max: 'C2' },
       intensity: 'medium',
       autoProcess: true,
       showPhonetic: true,

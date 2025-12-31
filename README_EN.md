@@ -26,7 +26,7 @@
 ## ✨ Key Features
 
 - **Multi-LLM Support** — Compatible with OpenAI, DeepSeek, Moonshot, Groq, Ollama and more
-- **CEFR 6-Level Difficulty** — Precise vocabulary difficulty control (A1-C2), learn what you need
+- **CEFR Difficulty Range** — Filter any A1-C2 band to skip words that are too easy or too hard
 - **Smart Caching** — LRU cache (up to 10,000 words), millisecond response on revisits
 - **Bidirectional Translation** — Auto-detect page language, smart translation direction
 - **Vocabulary Management** — Learned words won't be replaced, memorize list for review
@@ -143,4 +143,3 @@ If you've built upon this project, feel free to attribute:
 ```
 Based on VocabMeld (https://github.com/lzskyline/VocabMeld)
 ```
-
