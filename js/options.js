@@ -3,14 +3,26 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 默认 API 节点配置
-  const DEFAULT_API_ENDPOINTS = [
-    { id: 'deepseek', name: 'DeepSeek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat', qpm: 60, enabled: true },
-    { id: 'openai', name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o-mini', qpm: 60, enabled: false },
-    { id: 'moonshot', name: 'Moonshot', endpoint: 'https://api.moonshot.cn/v1/chat/completions', apiKey: '', model: 'moonshot-v1-8k', qpm: 10, enabled: false },
-    { id: 'groq', name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '', model: 'llama-3.1-8b-instant', qpm: 30, enabled: false },
-    { id: 'ollama', name: 'Ollama', endpoint: 'http://localhost:11434/v1/chat/completions', apiKey: '', model: 'qwen2.5:7b', qpm: 0, enabled: false }
-  ];
+  // API 预设配置（与 config.js 保持同步）
+  const API_PRESETS = {
+    deepseek: { name: 'DeepSeek', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', qpm: 360 },
+    openai: { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini', qpm: 360 },
+    gemini: { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', model: 'gemini-2.5-flash', qpm: 360 },
+    qwen: { name: 'Qwen (通义千问)', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', qpm: 360 },
+    groq: { name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant', qpm: 360 },
+    ollama: { name: 'Ollama (本地)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5:7b', qpm: 0 }
+  };
+
+  // 从预设生成默认 API 节点配置
+  const DEFAULT_API_ENDPOINTS = Object.entries(API_PRESETS).map(([id, preset], index) => ({
+    id,
+    name: preset.name,
+    endpoint: preset.endpoint,
+    apiKey: '',
+    model: preset.model,
+    qpm: preset.qpm,
+    enabled: index === 0 // 第一个默认启用
+  }));
 
   // 生成唯一 ID
   function generateId() {
@@ -65,6 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     endpointModal: document.getElementById('endpointModal'),
     endpointModalTitle: document.getElementById('endpointModalTitle'),
     endpointForm: document.getElementById('endpointForm'),
+    endpointPreset: document.getElementById('endpointPreset'),
     endpointName: document.getElementById('endpointName'),
     endpointUrl: document.getElementById('endpointUrl'),
     endpointApiKey: document.getElementById('endpointApiKey'),
@@ -931,9 +944,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderEndpointsList();
   }
 
+  // 初始化预设下拉菜单选项
+  function initPresetSelect() {
+    if (!elements.endpointPreset) return;
+    elements.endpointPreset.innerHTML = '<option value="">OpenAI API 兼容格式</option>';
+    Object.entries(API_PRESETS).forEach(([id, preset]) => {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = preset.name;
+      elements.endpointPreset.appendChild(option);
+    });
+  }
+
   // 打开节点编辑弹窗
   function openEndpointModal(id = null) {
     editingEndpointId = id;
+    initPresetSelect();
 
     if (id) {
       const endpoint = apiEndpoints.find(ep => ep.id === id);
@@ -946,13 +972,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       elements.endpointModel.value = endpoint.model;
       elements.endpointQpm.value = endpoint.qpm || 0;
       elements.deleteEndpointBtn.style.display = 'block';
+
+      // 匹配预设
+      const matchedPreset = Object.entries(API_PRESETS).find(
+        ([, preset]) => preset.endpoint === endpoint.endpoint
+      );
+      elements.endpointPreset.value = matchedPreset ? matchedPreset[0] : '';
     } else {
       elements.endpointModalTitle.textContent = '添加节点';
       elements.endpointName.value = '';
       elements.endpointUrl.value = '';
       elements.endpointApiKey.value = '';
       elements.endpointModel.value = '';
-      elements.endpointQpm.value = 60;
+      elements.endpointQpm.value = 360;
+      elements.endpointPreset.value = '';
       elements.deleteEndpointBtn.style.display = 'none';
     }
 
@@ -1066,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     elements.testEndpointBtn.disabled = true;
-    elements.testEndpointResult.textContent = '测试中...';
+    elements.testEndpointResult.innerHTML = '<span class="loading-spinner"></span>';
     elements.testEndpointResult.className = 'test-result';
 
     chrome.runtime.sendMessage({
@@ -1077,11 +1110,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, (response) => {
       elements.testEndpointBtn.disabled = false;
       if (response?.success) {
-        elements.testEndpointResult.textContent = '✓ 连接成功';
-        elements.testEndpointResult.className = 'test-result success';
+        elements.testEndpointResult.innerHTML = '<span class="test-icon success">✓</span>';
+        showGlobalToast('连接成功', 'success');
       } else {
-        elements.testEndpointResult.textContent = '✗ ' + (response?.message || '连接失败');
-        elements.testEndpointResult.className = 'test-result error';
+        elements.testEndpointResult.innerHTML = '<span class="test-icon error">✗</span>';
+        showGlobalToast(response?.message || '连接失败', 'error');
       }
     });
   }
@@ -1807,6 +1840,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (elements.testEndpointBtn) {
       elements.testEndpointBtn.addEventListener('click', testEndpointConnection);
+    }
+
+    // 预设选择变化时自动填充表单
+    if (elements.endpointPreset) {
+      elements.endpointPreset.addEventListener('change', () => {
+        const presetId = elements.endpointPreset.value;
+        if (presetId && API_PRESETS[presetId]) {
+          const preset = API_PRESETS[presetId];
+          elements.endpointName.value = preset.name;
+          elements.endpointUrl.value = preset.endpoint;
+          elements.endpointModel.value = preset.model;
+          elements.endpointQpm.value = preset.qpm;
+          // API 密钥保持不变，让用户手动输入
+        }
+      });
     }
 
     // 切换 API 密钥可见性

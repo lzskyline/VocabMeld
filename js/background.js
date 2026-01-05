@@ -6,6 +6,61 @@
 // 多节点轮询状态
 let endpointRoundRobin = 0;
 
+// 检测是否是 Gemini API
+function isGeminiApi(endpoint) {
+  return endpoint.includes('generativelanguage.googleapis.com');
+}
+
+// 将 OpenAI 格式请求转换为 Gemini 格式
+function convertToGeminiFormat(body) {
+  const messages = body.messages || [];
+  const contents = [];
+  let systemInstruction = null;
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemInstruction = { parts: [{ text: msg.content }] };
+    } else {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
+    }
+  }
+
+  const geminiBody = {
+    contents,
+    generationConfig: {
+      temperature: body.temperature || 0.3,
+      maxOutputTokens: body.max_tokens || 8192
+    }
+  };
+
+  if (systemInstruction) {
+    geminiBody.systemInstruction = systemInstruction;
+  }
+
+  return geminiBody;
+}
+
+// 将 Gemini 响应转换为 OpenAI 格式
+function convertFromGeminiFormat(geminiResponse) {
+  let text = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  // 清理 Markdown 代码块包装（Gemini 2.5 会返回 ```json ... ```）
+  text = text.replace(/^```json\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+
+  return {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: text
+      },
+      finish_reason: 'stop'
+    }]
+  };
+}
+
 // 获取可用的 API 节点（已启用且未超过速率限制）
 async function getAvailableEndpoints() {
   return new Promise((resolve) => {
@@ -436,29 +491,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 通用 API 调用（从 background 发起，避免 CORS）
 async function callApi(endpoint, apiKey, body) {
+  // 检测是否是 Gemini API
+  if (isGeminiApi(endpoint)) {
+    return callGeminiApi(endpoint, apiKey, body);
+  }
+
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-  
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify(body)
   });
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error?.message || `API Error: ${response.status}`);
   }
-  
+
   return await response.json();
+}
+
+// Gemini API 调用
+async function callGeminiApi(endpoint, apiKey, body) {
+  // Gemini 使用 URL 参数传递 API Key
+  const url = `${endpoint}?key=${apiKey}`;
+  const geminiBody = convertToGeminiFormat(body);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(geminiBody)
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || `Gemini API Error: ${response.status}`);
+  }
+
+  const geminiResponse = await response.json();
+  return convertFromGeminiFormat(geminiResponse);
 }
 
 // 测试 API 连接
 async function testApiConnection(endpoint, apiKey, model) {
   try {
+    // Gemini API 使用不同的测试方式
+    if (isGeminiApi(endpoint)) {
+      return testGeminiApiConnection(endpoint, apiKey);
+    }
+
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-    
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -468,17 +554,46 @@ async function testApiConnection(endpoint, apiKey, model) {
         max_tokens: 10
       })
     });
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error?.message || `HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     if (data.choices && data.choices[0]) {
       return { success: true, message: '连接成功！' };
     }
-    
+
+    throw new Error('Invalid response');
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+}
+
+// 测试 Gemini API 连接
+async function testGeminiApiConnection(endpoint, apiKey) {
+  try {
+    const url = `${endpoint}?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Say OK' }] }],
+        generationConfig: { maxOutputTokens: 10 }
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.candidates && data.candidates[0]) {
+      return { success: true, message: '连接成功！' };
+    }
+
     throw new Error('Invalid response');
   } catch (error) {
     return { success: false, message: error.message };

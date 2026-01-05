@@ -36,30 +36,41 @@ export const SUPPORTED_LANGUAGES = {
 
 // API 预设配置
 export const API_PRESETS = {
-  openai: {
-    name: 'OpenAI',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini'
-  },
   deepseek: {
     name: 'DeepSeek',
     endpoint: 'https://api.deepseek.com/chat/completions',
-    model: 'deepseek-chat'
+    model: 'deepseek-chat',
+    qpm: 360
   },
-  moonshot: {
-    name: 'Moonshot',
-    endpoint: 'https://api.moonshot.cn/v1/chat/completions',
-    model: 'moonshot-v1-8k'
+  openai: {
+    name: 'OpenAI',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    qpm: 360
+  },
+  gemini: {
+    name: 'Google Gemini',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    model: 'gemini-2.5-flash',
+    qpm: 360
+  },
+  qwen: {
+    name: 'Qwen (通义千问)',
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    model: 'qwen-plus',
+    qpm: 360
   },
   groq: {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.1-8b-instant'
+    model: 'llama-3.1-8b-instant',
+    qpm: 360
   },
   ollama: {
     name: 'Ollama (本地)',
     endpoint: 'http://localhost:11434/v1/chat/completions',
-    model: 'qwen2.5:7b'
+    model: 'qwen2.5:7b',
+    qpm: 0
   }
 };
 

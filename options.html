@@ -98,6 +98,13 @@
           </div>
           <form id="endpointForm" class="modal-body">
             <div class="form-group">
+              <label for="endpointPreset">从预设选择</label>
+              <select id="endpointPreset">
+                <option value="">OpenAI API 兼容格式</option>
+              </select>
+            </div>
+
+            <div class="form-group">
               <label for="endpointName">节点名称</label>
               <input type="text" id="endpointName" placeholder="例如：DeepSeek">
             </div>
@@ -126,18 +133,8 @@
 
             <div class="form-group">
               <label for="endpointQpm">速率限制 (QPM)</label>
-              <input type="number" id="endpointQpm" placeholder="60" min="0" value="60">
+              <input type="number" id="endpointQpm" placeholder="360" min="0" value="360">
               <p class="help-text">每分钟请求数上限，0 表示不限制</p>
-            </div>
-
-            <div class="form-actions">
-              <button type="button" class="btn btn-secondary" id="testEndpointBtn">
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                  <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
-                </svg>
-                测试连接
-              </button>
-              <span class="test-result" id="testEndpointResult"></span>
             </div>
           </form>
           <div class="modal-footer">
@@ -147,7 +144,13 @@
               </svg>
               删除
             </button>
-            <button type="button" class="btn btn-secondary" id="cancelEndpointBtn2">取消</button>
+            <span class="test-result" id="testEndpointResult"></span>
+            <button type="button" class="btn btn-secondary" id="testEndpointBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/>
+              </svg>
+              测试
+            </button>
             <button type="button" class="btn btn-primary" id="saveEndpointBtn">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path fill="currentColor" d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z"/>

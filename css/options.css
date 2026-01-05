@@ -310,6 +310,9 @@ body {
 .test-result {
   font-size: 14px;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  min-width: 20px;
 }
 
 .test-result.success {
@@ -318,6 +321,32 @@ body {
 
 .test-result.error {
   color: var(--danger);
+}
+
+.test-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.test-icon.success {
+  color: var(--success);
+}
+
+.test-icon.error {
+  color: var(--danger);
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Difficulty Selector */
@@ -2664,7 +2693,7 @@ input:checked + .toggle-slider:before {
 
 .modal-content {
   width: 100%;
-  max-width: 480px;
+  max-width: 720px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
