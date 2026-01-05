@@ -408,46 +408,50 @@
     const trimmedWord = word.trim();
     const list = config.memorizeList || [];
     const exists = list.some(w => w.word === trimmedWord);
-    
+
     if (!exists) {
       list.push({ word: trimmedWord, addedAt: Date.now() });
       config.memorizeList = list;
-      await new Promise(resolve => chrome.storage.local.set({ memorizeList: list }, resolve));
+      chrome.storage.local.set({ memorizeList: list });
 
-      // 添加到记忆列表后，立即检查页面上是否存在这些单词并触发翻译
-      // 确保配置已加载且扩展已启用
-      if (!config) {
-        await loadConfig();
-      }
-      
-      // 确保扩展已启用
-      if (!config.enabled) {
-        showToast(`"${trimmedWord}" 已添加到记忆列表`);
-        return;
-      }
-      
-      // 立即触发翻译处理（等待完成以确保翻译结果正确应用到页面）
-      try {
-        const count = await processSpecificWords([trimmedWord]);
-        
-        if (count > 0) {
-          showToast(`"${trimmedWord}" 已添加到记忆列表并翻译`);
-        } else {
-          // 即使页面上没有找到，也要确保翻译结果被缓存，以便下次加载时使用
-          try {
-            await translateSpecificWords([trimmedWord]);
-            showToast(`"${trimmedWord}" 已添加到记忆列表`);
-          } catch (error) {
-            console.error('[VocabMeld] Error translating word:', trimmedWord, error);
-            showToast(`"${trimmedWord}" 已添加到记忆列表`);
-          }
-        }
-      } catch (error) {
-        console.error('[VocabMeld] Error processing word:', trimmedWord, error);
-        showToast(`"${trimmedWord}" 已添加到记忆列表`);
+      // 立即显示反馈，不等待翻译完成
+      showToast(`"${trimmedWord}" 已添加到记忆列表`);
+
+      // 后台异步处理翻译，不阻塞UI
+      if (config.enabled) {
+        processSpecificWords([trimmedWord]).catch(error => {
+          console.error('[VocabMeld] Error processing word:', trimmedWord, error);
+        });
       }
     } else {
       showToast(`"${trimmedWord}" 已在记忆列表中`);
+    }
+  }
+
+  // 翻译后添加到记忆列表（用于划选添加场景）
+  async function translateAndAddToMemorize(word) {
+    if (!word || !word.trim()) return;
+
+    const trimmedWord = word.trim();
+    showToast(`正在翻译 "${trimmedWord}"...`);
+
+    try {
+      // 调用翻译API获取翻译结果
+      const results = await translateSpecificWords([trimmedWord]);
+      if (results && results.length > 0) {
+        // 使用翻译结果（学习语言）添加到记忆列表
+        const translation = results[0].translation || trimmedWord;
+        addToMemorizeList(translation);
+        // 在页面上替换原文为带hover效果的翻译内容
+        processSpecificWords([trimmedWord]).catch(console.error);
+      } else {
+        // 翻译失败，使用原文
+        addToMemorizeList(trimmedWord);
+      }
+    } catch (error) {
+      console.error('[VocabMeld] Error translating word:', error);
+      // 翻译失败，使用原文
+      addToMemorizeList(trimmedWord);
     }
   }
 
@@ -1036,14 +1040,18 @@ ${filteredText}
         await saveWordCache();
 
         // 本地过滤：只保留符合用户难度设置的词汇，并过滤掉小于5个字符的英文单词
+        // 记忆列表中的词汇绕过难度过滤
+        const memorizeWords = (config.memorizeList || []).map(w => w.word.toLowerCase());
         const filteredResults = allResults.filter(item => {
-          // 过滤难度级别
-          if (!isDifficultyCompatible(item.difficulty || 'B1', config.difficultyRange)) {
+          const isInMemorizeList = memorizeWords.includes(item.original.toLowerCase()) ||
+                                   memorizeWords.includes((item.translation || '').toLowerCase());
+          // 过滤难度级别（记忆列表中的词汇除外）
+          if (!isInMemorizeList && !isDifficultyCompatible(item.difficulty || 'B1', config.difficultyRange)) {
             return false;
           }
-          // 过滤小于5个字符的英文单词
+          // 过滤小于5个字符的英文单词（记忆列表中的词汇除外）
           const isEnglish = /^[a-zA-Z]+$/.test(item.original);
-          if (isEnglish && item.original.length < 5) {
+          if (!isInMemorizeList && isEnglish && item.original.length < 5) {
             return false;
           }
           return true;
@@ -2209,7 +2217,7 @@ ${originalWord}
       <div class="vocabmeld-tooltip-header">
         <span class="vocabmeld-tooltip-word">${translation}</span>
         <span class="vocabmeld-tooltip-badge" data-difficulty="${difficulty}">${difficulty}</span>
-        <button class="vocabmeld-tooltip-btn vocabmeld-btn-memorize ${isInMemorizeList ? 'active' : ''}" data-original="${original}" title="${isInMemorizeList ? '已在记忆列表' : '添加到记忆列表'}">
+        <button class="vocabmeld-tooltip-btn vocabmeld-btn-memorize ${isInMemorizeList ? 'active' : ''}" data-original="${original}" data-translation="${translation}" title="${isInMemorizeList ? '已在记忆列表' : '添加到记忆列表'}">
           <svg viewBox="0 0 24 24" width="16" height="16">
             ${isInMemorizeList 
               ? '<path fill="currentColor" d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z"/>'
@@ -2361,8 +2369,7 @@ ${originalWord}
       const selection = window.getSelection();
       const text = selection.toString().trim();
       if (text && text.length < 50) {
-        await addToMemorizeList(text);
-        showToast(`"${text}" 已添加到需记忆列表`);
+        translateAndAddToMemorize(text);
       }
       selectionPopup.style.display = 'none';
     });
@@ -2438,10 +2445,13 @@ ${originalWord}
         e.preventDefault();
         e.stopPropagation();
         const original = memorizeBtn.getAttribute('data-original');
+        const translation = memorizeBtn.getAttribute('data-translation');
         const isActive = memorizeBtn.classList.contains('active');
-        
+        // 添加学习语言（translation）而不是原文
+        const wordToAdd = translation || original;
+
         if (!isActive) {
-          addToMemorizeList(original);
+          addToMemorizeList(wordToAdd);
           memorizeBtn.classList.add('active');
           memorizeBtn.title = '已在记忆列表';
           // 更新图标为实心
@@ -2451,7 +2461,7 @@ ${originalWord}
             </svg>
           `;
         } else {
-          removeFromMemorizeList(original);
+          removeFromMemorizeList(wordToAdd);
           memorizeBtn.classList.remove('active');
           memorizeBtn.title = '添加到记忆';
           // 更新图标为镂空
@@ -2599,6 +2609,15 @@ ${originalWord}
           return true; // 保持消息通道开放以支持异步响应
         } else {
           sendResponse({ success: false, error: 'No words provided' });
+        }
+      }
+      if (message.action === 'translateAndAddToMemorize') {
+        const word = message.word;
+        if (word) {
+          translateAndAddToMemorize(word);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No word provided' });
         }
       }
       if (message.action === 'getStatus') {

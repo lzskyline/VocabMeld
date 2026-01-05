@@ -305,20 +305,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'vocabmeld-add-memorize' && info.selectionText) {
     const word = info.selectionText.trim();
     if (word && word.length < 50) {
-      chrome.storage.local.get('memorizeList', (result) => {
-        const list = result.memorizeList || [];
-        if (!list.some(w => w.word === word)) {
-          list.push({ word, addedAt: Date.now() });
-          chrome.storage.local.set({ memorizeList: list }, () => {
-            // 通知 content script 处理特定单词
-            chrome.tabs.sendMessage(tab.id, { 
-              action: 'processSpecificWords', 
-              words: [word] 
-            }).catch(err => {
-              console.log('[VocabMeld] Content script not ready, word will be processed on next page load');
-            });
-          });
-        }
+      // 发送到 content script 进行翻译后再添加到记忆列表
+      chrome.tabs.sendMessage(tab.id, {
+        action: 'translateAndAddToMemorize',
+        word: word
+      }).catch(err => {
+        console.log('[VocabMeld] Content script not ready');
       });
     }
   }
