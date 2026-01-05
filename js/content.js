@@ -964,6 +964,7 @@ ${filteredText}
         const apiResponse = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({
             action: 'apiRequest',
+            _debugText: filteredText.slice(0, 80),  // 用于日志的原始文本
             body: {
               messages: [
                 { role: 'system', content: '你是一个专业的语言学习助手。始终返回有效的 JSON 格式。' },
@@ -1594,24 +1595,31 @@ ${originalWord}
   // 处理待处理的可见容器
   const processPendingContainers = debounce(async () => {
     if (isProcessing || pendingContainers.size === 0) return;
-    
+
     isProcessing = true;
-    
+
     try {
       const containers = Array.from(pendingContainers).slice(0, MAX_SEGMENTS_PER_BATCH);
       // 只移除本次要处理的容器，保留后续添加的
       for (const container of containers) {
         pendingContainers.delete(container);
       }
-      
+
       // 收集需要处理的段落
       const segments = [];
       const whitelistWords = new Set((config.learnedWords || []).map(w => w.original.toLowerCase()));
-      
+
       for (const container of containers) {
         // 移除观察标记
         container.removeAttribute('data-vocabmeld-observing');
-        
+
+        // 跳过已处理或正在处理的容器
+        if (container.hasAttribute('data-vocabmeld-processed') ||
+            container.hasAttribute('data-vocabmeld-processing')) continue;
+
+        // 立即标记为正在处理，防止重复添加到队列
+        container.setAttribute('data-vocabmeld-processing', 'true');
+
         if (container.hasAttribute('data-vocabmeld-processed')) continue;
         
         const text = getTextContent(container);
@@ -1657,33 +1665,34 @@ ${originalWord}
   // 批量处理多个段落（合并为一个API请求）
   async function processBatchSegments(segments, whitelistWords) {
     if (segments.length === 0) return;
-    
+
     // 合并所有段落的文本，用分隔符隔开
     const combinedText = segments.map(s => s.filteredText).join('\n\n---\n\n');
-    
+
     try {
       const result = await translateText(combinedText);
-      
+
       // 将翻译结果分配给各个段落
       const allReplacements = [...(result.immediate || [])];
-      
+
       // 为每个段落应用匹配的翻译结果
       for (const segment of segments) {
         const segmentText = segment.text.toLowerCase();
-        const matchingReplacements = allReplacements.filter(r => 
+        const matchingReplacements = allReplacements.filter(r =>
           segmentText.includes(r.original.toLowerCase()) &&
           !whitelistWords.has(r.original.toLowerCase())
         );
-        
+
         if (matchingReplacements.length > 0) {
           applyReplacements(segment.element, matchingReplacements);
-          processedFingerprints.add(segment.fingerprint);
           // 后台预加载词典数据
           const wordsToFetch = matchingReplacements.map(r => r.original).concat(matchingReplacements.map(r => r.translation));
           prefetchDictionaryData(wordsToFetch);
         }
+        // 无论是否有替换，都标记为已处理
+        processedFingerprints.add(segment.fingerprint);
       }
-      
+
       // 处理异步结果
       if (result.async) {
         result.async.then(asyncReplacements => {
@@ -1695,13 +1704,13 @@ ${originalWord}
                 const original = el.getAttribute('data-original');
                 if (original) alreadyReplaced.add(original.toLowerCase());
               });
-              
-              const matchingReplacements = asyncReplacements.filter(r => 
+
+              const matchingReplacements = asyncReplacements.filter(r =>
                 segmentText.includes(r.original.toLowerCase()) &&
                 !whitelistWords.has(r.original.toLowerCase()) &&
                 !alreadyReplaced.has(r.original.toLowerCase())
               );
-              
+
               if (matchingReplacements.length > 0) {
                 applyReplacements(segment.element, matchingReplacements);
                 // 后台预加载词典数据
@@ -2361,11 +2370,11 @@ ${originalWord}
 
   // ============ 事件处理 ============
   function setupEventListeners() {
-    // 悬停显示提示
+    // 悬停显示提示 - 使用捕获模式确保能捕获到事件
     document.addEventListener('mouseover', (e) => {
       const target = e.target.closest('.vocabmeld-translated');
       const tooltipTarget = e.target.closest('.vocabmeld-tooltip');
-      
+
       if (target) {
         cancelHideTooltip();
         showTooltip(target, e.clientX, e.clientY);
@@ -2373,27 +2382,27 @@ ${originalWord}
         // 鼠标移入 tooltip 时取消隐藏
         cancelHideTooltip();
       }
-    });
+    }, true); // 使用捕获模式
 
     document.addEventListener('mouseout', (e) => {
       const target = e.target.closest('.vocabmeld-translated');
       const tooltipTarget = e.target.closest('.vocabmeld-tooltip');
       const relatedTarget = e.relatedTarget;
-      
+
       // 从翻译元素移出时，延迟隐藏
-      if (target && 
-          !relatedTarget?.closest('.vocabmeld-translated') && 
+      if (target &&
+          !relatedTarget?.closest('.vocabmeld-translated') &&
           !relatedTarget?.closest('.vocabmeld-tooltip')) {
         hideTooltip();
       }
-      
+
       // 从 tooltip 移出时，延迟隐藏
-      if (tooltipTarget && 
+      if (tooltipTarget &&
           !relatedTarget?.closest('.vocabmeld-tooltip') &&
           !relatedTarget?.closest('.vocabmeld-translated')) {
         hideTooltip();
       }
-    });
+    }, true); // 使用捕获模式
 
     // tooltip 按钮点击事件
     document.addEventListener('click', (e) => {

@@ -97,9 +97,13 @@ async function recordEndpointUsage(endpointId) {
 }
 
 // 带重试和节点切换的 API 调用
-async function callApiWithRetry(body, maxRetries = 3) {
+async function callApiWithRetry(body, maxRetries = 3, debugText = '') {
   let lastError = null;
   let triedEndpoints = new Set();
+
+  // 使用传入的 debugText，如果没有则尝试从 body 中提取
+  const textPreview = debugText || body.messages?.[body.messages.length - 1]?.content?.slice(0, 80) || '';
+  console.log(`[VocabMeld] translateText start ${new Date().toISOString()} ${textPreview}...`);
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const { available } = await getAvailableEndpoints();
@@ -109,11 +113,13 @@ async function callApiWithRetry(body, maxRetries = 3) {
 
     if (remaining.length === 0) {
       // 所有节点都已尝试或不可用
+      console.log(`[VocabMeld] translateText end ${new Date().toISOString()} [FAILED] 没有可用节点`);
       throw lastError || new Error('没有可用的 API 节点');
     }
 
     const endpoint = selectNextEndpoint(remaining);
     if (!endpoint) {
+      console.log(`[VocabMeld] translateText end ${new Date().toISOString()} [FAILED] 没有可用节点`);
       throw new Error('没有可用的 API 节点');
     }
 
@@ -121,12 +127,15 @@ async function callApiWithRetry(body, maxRetries = 3) {
       // 记录使用
       await recordEndpointUsage(endpoint.id);
 
+      console.log(`[VocabMeld] 使用节点: ${endpoint.name} (${endpoint.id}), 尝试 ${attempt + 1}/${maxRetries}`);
+
       const result = await callApi(
         endpoint.endpoint,
         endpoint.apiKey,
         { ...body, model: endpoint.model }
       );
 
+      console.log(`[VocabMeld] translateText end ${new Date().toISOString()}`, result);
       return result;
     } catch (error) {
       console.log(`[VocabMeld] Endpoint ${endpoint.name} failed:`, error.message);
@@ -138,6 +147,7 @@ async function callApiWithRetry(body, maxRetries = 3) {
     }
   }
 
+  console.log(`[VocabMeld] translateText end ${new Date().toISOString()} [FAILED]`, lastError?.message);
   throw lastError || new Error('API 调用失败');
 }
 
@@ -327,7 +337,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // 发送 API 请求（避免 CORS 问题）- 使用多节点轮询
   if (message.action === 'apiRequest') {
-    callApiWithRetry(message.body)
+    callApiWithRetry(message.body, 3, message._debugText)
       .then(data => sendResponse({ success: true, data }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
