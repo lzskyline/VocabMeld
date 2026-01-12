@@ -1,6 +1,6 @@
 {
   "name": "vocabmeld",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "沉浸式语言学习 Chrome 插件 - 在日常浏览中自然习得语言",
   "scripts": {
     "build": "node scripts/build.js",
