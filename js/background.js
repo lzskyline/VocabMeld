@@ -333,6 +333,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'speak') {
     const text = message.text;
     const lang = message.lang || 'en-US';
+
+    if (!text) {
+      sendResponse({ success: false, error: 'No text provided' });
+      return false;
+    }
+
+    const canUseTts = !!(chrome.tts &&
+      typeof chrome.tts.stop === 'function' &&
+      typeof chrome.tts.speak === 'function');
+    if (!canUseTts) {
+      sendResponse({ success: false, error: 'chrome.tts unavailable' });
+      return false;
+    }
     
     // 获取用户配置的语音设置
     chrome.storage.sync.get(['ttsRate', 'ttsVoice'], (settings) => {
@@ -368,6 +381,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // 获取可用的 TTS 声音列表
   if (message.action === 'getVoices') {
+    const canListVoices = !!(chrome.tts && typeof chrome.tts.getVoices === 'function');
+    if (!canListVoices) {
+      sendResponse({ voices: [], error: 'chrome.tts unavailable' });
+      return false;
+    }
+
     chrome.tts.getVoices((voices) => {
       sendResponse({ voices: voices || [] });
     });

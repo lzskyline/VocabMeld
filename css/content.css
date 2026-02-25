@@ -12,9 +12,31 @@
   }
 }
 
+@keyframes vocabmeld-segment-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 悬停效果 - 背景色由 content.js 动态生成以支持配色切换 */
 .vocabmeld-translated:hover {
   background: rgba(99, 102, 241, 0.15);
+}
+
+[data-vocabmeld-loading="true"]::after {
+  content: '' !important;
+  display: inline-block !important;
+  width: 12px !important;
+  height: 12px !important;
+  margin-left: 8px !important;
+  border: 2px solid rgba(99, 102, 241, 0.45) !important;
+  border-top-color: transparent !important;
+  border-radius: 999px !important;
+  animation: vocabmeld-segment-spin 0.75s linear infinite !important;
+  vertical-align: middle !important;
 }
 
 /* 明亮主题适配 */
