@@ -39,9 +39,18 @@
 
 ### 安装
 
+#### Chrome
+
 1. 打开 Chrome，访问 `chrome://extensions/`
 2. 开启"开发者模式"
 3. 点击"加载已解压的扩展程序"，选择本项目文件夹
+
+#### Safari
+
+1. 在终端执行：`xcrun safari-web-extension-converter <项目文件夹>`
+2. 命令执行后会生成新的项目文件夹，并自动打开 Xcode
+3. 在 Xcode 中执行一次 构建（`⌘B`）
+4. 打开 Safari → 设置 → 开发者，勾选 "允许未签名的扩展程序"
 
 ### 配置 API
 
