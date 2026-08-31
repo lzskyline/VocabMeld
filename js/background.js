@@ -321,9 +321,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 // 快捷键处理
-chrome.commands.onCommand.addListener((command, tab) => {
+chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-translation') {
-    chrome.tabs.sendMessage(tab.id, { action: 'processPage' });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'processPage' }).catch(() => {
+          console.log('[VocabMeld] Content script not ready');
+        });
+      }
+    });
   }
 });
 
@@ -398,9 +404,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-  // 通用 fetch 代理（用于第三方 API，避免 CORS）
+  // 通用 fetch 代理（仅限词典域名，避免被用作任意 URL 的请求跳板）
   if (message.action === 'fetchProxy') {
-    fetch(message.url)
+    const ALLOWED_PROXY_HOSTS = ['dict.youdao.com', 'en.wiktionary.org'];
+    let target;
+    try {
+      target = new URL(message.url);
+    } catch (e) {
+      sendResponse({ success: false, error: 'Invalid URL' });
+      return true;
+    }
+    if (target.protocol !== 'https:' || !ALLOWED_PROXY_HOSTS.includes(target.hostname)) {
+      sendResponse({ success: false, error: 'Domain not allowed' });
+      return true;
+    }
+    fetch(target.href)
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
