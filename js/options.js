@@ -29,6 +29,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 'ep_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
+  // 转义外部数据（节点名、词汇、翻译等）后再拼入 innerHTML，避免注入
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
   // 当前节点配置状态
   let apiEndpoints = [];
   let editingEndpointId = null;
@@ -179,6 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     importDataBtn: document.getElementById('importDataBtn'),
     importFileInput: document.getElementById('importFileInput'),
     exportSettings: document.getElementById('exportSettings'),
+    exportApiKeys: document.getElementById('exportApiKeys'),
     exportWords: document.getElementById('exportWords'),
     exportStats: document.getElementById('exportStats'),
     exportCache: document.getElementById('exportCache')
@@ -459,17 +467,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { original, translation, phonetic, difficulty } = wordData;
     const dictionaryType = currentSettings.dictionaryType || 'zh-en';
 
+    // 静态骨架 + DOM API 填充，避免词汇/翻译数据注入
     wordTooltip.innerHTML = `
       <div class="word-tooltip-header">
-        <span class="word-tooltip-word">${original}</span>
-        ${difficulty ? `<span class="word-tooltip-badge">${difficulty}</span>` : ''}
+        <span class="word-tooltip-word"></span>
+        <span class="word-tooltip-badge"></span>
       </div>
-      ${phonetic ? `<div class="word-tooltip-phonetic">${phonetic}</div>` : ''}
-      ${translation ? `<div class="word-tooltip-original">释义: ${translation}</div>` : ''}
+      <div class="word-tooltip-phonetic"></div>
+      <div class="word-tooltip-original"></div>
       <div class="word-tooltip-dict">
         <div class="word-tooltip-dict-loading">加载词典...</div>
       </div>
     `;
+
+    wordTooltip.querySelector('.word-tooltip-word').textContent = original;
+    if (difficulty) {
+      wordTooltip.querySelector('.word-tooltip-badge').textContent = difficulty;
+    } else {
+      wordTooltip.querySelector('.word-tooltip-badge').remove();
+    }
+    if (phonetic) {
+      wordTooltip.querySelector('.word-tooltip-phonetic').textContent = phonetic;
+    } else {
+      wordTooltip.querySelector('.word-tooltip-phonetic').remove();
+    }
+    if (translation) {
+      wordTooltip.querySelector('.word-tooltip-original').textContent = `释义: ${translation}`;
+    } else {
+      wordTooltip.querySelector('.word-tooltip-original').remove();
+    }
 
     const rect = element.getBoundingClientRect();
     wordTooltip.style.left = rect.right + 8 + 'px';
@@ -504,19 +530,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    let html = '';
+    // 释义来自外部词典站点，用 DOM API 构建避免注入
+    dictContainer.textContent = '';
     for (const meaning of dictData.meanings) {
-      html += `<div class="word-tooltip-dict-entry">`;
+      const entry = document.createElement('div');
+      entry.className = 'word-tooltip-dict-entry';
       if (meaning.partOfSpeech) {
-        html += `<span class="word-tooltip-dict-pos">${meaning.partOfSpeech}</span>`;
+        const pos = document.createElement('span');
+        pos.className = 'word-tooltip-dict-pos';
+        pos.textContent = meaning.partOfSpeech;
+        entry.appendChild(pos);
       }
-      html += `<ul class="word-tooltip-dict-defs">`;
+      const defs = document.createElement('ul');
+      defs.className = 'word-tooltip-dict-defs';
       for (const def of meaning.definitions) {
-        html += `<li>${def}</li>`;
+        const li = document.createElement('li');
+        li.textContent = def;
+        defs.appendChild(li);
       }
-      html += `</ul></div>`;
+      entry.appendChild(defs);
+      dictContainer.appendChild(entry);
     }
-    dictContainer.innerHTML = html;
   }
 
   async function fetchDictionaryData(word, dictionaryType) {
@@ -812,7 +846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="endpoint-info">
               <div class="endpoint-header">
-                <span class="endpoint-name">${ep.name}</span>
+                <span class="endpoint-name">${escapeHtml(ep.name)}</span>
               </div>
               <div class="endpoint-usage">
                 <span class="usage-badge" title="当前时间窗口请求数${ep.qpm > 0 ? '/限制' : ''}">
@@ -1328,16 +1362,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     container.innerHTML = words.map(w => `
       <div class="word-item">
-        <button class="word-speak" data-word="${w.original}" title="播放发音">
+        <button class="word-speak" data-word="${escapeHtml(w.original)}" title="播放发音">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="currentColor" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"/>
           </svg>
         </button>
-        <span class="word-original" data-original="${w.original}" data-translation="${w.word || ''}" data-phonetic="${w.phonetic || ''}" data-difficulty="${w.difficulty || ''}">${w.original}</span>
-        ${w.word ? `<span class="word-translation">${w.word}</span>` : ''}
-        ${w.difficulty ? `<span class="word-difficulty difficulty-${w.difficulty.toLowerCase()}">${w.difficulty}</span>` : ''}
+        <span class="word-original" data-original="${escapeHtml(w.original)}" data-translation="${escapeHtml(w.word || '')}" data-phonetic="${escapeHtml(w.phonetic || '')}" data-difficulty="${escapeHtml(w.difficulty || '')}">${escapeHtml(w.original)}</span>
+        ${w.word ? `<span class="word-translation">${escapeHtml(w.word)}</span>` : ''}
+        ${w.difficulty ? `<span class="word-difficulty difficulty-${escapeHtml(w.difficulty.toLowerCase())}">${escapeHtml(w.difficulty)}</span>` : ''}
         <span class="word-date">${formatDate(w.addedAt)}</span>
-        ${type !== 'cached' ? `<button class="word-remove" data-word="${w.original}" data-type="${type}">&times;</button>` : `<button class="word-remove" data-key="${w.cacheKey || ''}" data-type="cached">&times;</button>`}
+        ${type !== 'cached' ? `<button class="word-remove" data-word="${escapeHtml(w.original)}" data-type="${type}">&times;</button>` : `<button class="word-remove" data-key="${escapeHtml(w.cacheKey || '')}" data-type="cached">&times;</button>`}
       </div>
     `).join('');
 
@@ -2007,9 +2041,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       // 根据勾选项添加数据
       if (elements.exportSettings.checked) {
+        // 导出密钥需显式勾选，避免分享备份时泄漏 API Key
+        const includeApiKeys = elements.exportApiKeys?.checked === true;
         exportData.settings = {
+          // 多节点配置（含各节点模型与限速）
+          apiEndpoints: (syncData.apiEndpoints || []).map(ep => ({
+            ...ep,
+            apiKey: includeApiKeys ? ep.apiKey : ''
+          })),
           apiEndpoint: syncData.apiEndpoint,
-          apiKey: syncData.apiKey,
+          apiKey: includeApiKeys ? syncData.apiKey : '',
           modelName: syncData.modelName,
           apiConfigs: syncData.apiConfigs,
           currentApiConfig: syncData.currentApiConfig,
