@@ -590,6 +590,7 @@
   function findTextContainers(root) {
     const containers = [];
     const blockTags = ['P', 'DIV', 'ARTICLE', 'SECTION', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'BLOCKQUOTE'];
+    const semanticTextTags = new Set(['P', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE']);
     
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
       acceptNode: (node) => {
@@ -601,10 +602,11 @@
 
     let node;
     while (node = walker.nextNode()) {
-      const hasDirectText = Array.from(node.childNodes).some(
-        child => child.nodeType === Node.TEXT_NODE && child.textContent.trim().length > 10
-      );
-      if (hasDirectText) containers.push(node);
+      const directTextLength = Array.from(node.childNodes)
+        .filter(child => child.nodeType === Node.TEXT_NODE)
+        .reduce((length, child) => length + child.textContent.trim().length, 0);
+      const hasSemanticText = semanticTextTags.has(node.tagName) && node.textContent.trim().length > 20;
+      if (directTextLength > 10 || hasSemanticText) containers.push(node);
     }
     return containers;
   }
@@ -674,26 +676,36 @@
     
     // 根据配置的样式生成不同的HTML
     const style = config.translationStyle || 'translation-original';
-    let innerHTML = '';
-    
+    wrapper.classList.toggle('vocabmeld-translated-stacked', style === 'translation-stacked');
+    renderReplacementContent(wrapper, original, translation, style);
+    return wrapper;
+  }
+
+  function renderReplacementContent(wrapper, original, translation, style) {
+    wrapper.replaceChildren();
+    const appendText = (className, text) => {
+      const span = document.createElement('span');
+      span.className = className;
+      span.textContent = text;
+      wrapper.appendChild(span);
+    };
+
     switch (style) {
       case 'translation-only':
-        // 只显示译文
-        innerHTML = `<span class="vocabmeld-word">${translation}</span>`;
+        appendText('vocabmeld-word', translation);
         break;
       case 'original-translation':
-        // 原文(译文)
-        innerHTML = `<span class="vocabmeld-original">${original}</span><span class="vocabmeld-word">(${translation})</span>`;
+        appendText('vocabmeld-original', original);
+        appendText('vocabmeld-word', `(${translation})`);
         break;
-      case 'translation-original':
+      case 'translation-stacked':
+        appendText('vocabmeld-word', translation);
+        appendText('vocabmeld-original', original);
+        break;
       default:
-        // 译文(原文) - 默认样式
-        innerHTML = `<span class="vocabmeld-word">${translation}</span><span class="vocabmeld-original">(${original})</span>`;
-        break;
+        appendText('vocabmeld-word', translation);
+        appendText('vocabmeld-original', `(${original})`);
     }
-    
-    wrapper.innerHTML = innerHTML;
-    return wrapper;
   }
 
   function applyReplacements(element, replacements, allOccurrences = false) {
@@ -1434,20 +1446,9 @@ ${originalWord}
           el.setAttribute('data-phonetic', result.phonetic || '');
           el.setAttribute('data-difficulty', result.difficulty || 'B1');
           
-          // 更新显示内容
           const style = config.translationStyle || 'translation-original';
-          let innerHTML = '';
-          switch (style) {
-            case 'translation-only':
-              innerHTML = `<span class="vocabmeld-word">${result.translation}</span>`;
-              break;
-            case 'original-translation':
-              innerHTML = `<span class="vocabmeld-original">${originalWord}</span><span class="vocabmeld-word">(${result.translation})</span>`;
-              break;
-            default:
-              innerHTML = `<span class="vocabmeld-word">${result.translation}</span><span class="vocabmeld-original">(${originalWord})</span>`;
-          }
-          el.innerHTML = innerHTML;
+          el.classList.toggle('vocabmeld-translated-stacked', style === 'translation-stacked');
+          renderReplacementContent(el, originalWord, result.translation, style);
         }
       });
       
@@ -1661,7 +1662,7 @@ ${originalWord}
             container.hasAttribute('data-vocabmeld-processing')) continue;
 
         const text = getTextContent(container);
-        if (!text || text.length < 50) continue;
+        if (!text || text.length < 20) continue;
         if (isCodeText(text)) continue;
         
         const path = getElementPath(container);
@@ -1677,7 +1678,7 @@ ${originalWord}
           filteredText = filteredText.replace(regex, (...args) => isCjk ? '' : args[1]);
         }
         
-        if (filteredText.trim().length >= 30) {
+        if (filteredText.trim().length >= 20) {
           container.setAttribute('data-vocabmeld-processing', 'true');
           processingMarked.push(container);
           segments.push({ element: container, text: text.slice(0, 2000), filteredText, fingerprint, path });
@@ -2216,7 +2217,21 @@ ${originalWord}
     dictContainer.innerHTML = html || '<div class="vocabmeld-dict-empty">暂无词典数据</div>';
   }
 
-  function showTooltip(element, mouseX, mouseY) {
+  function getTooltipPosition(elementRect, tooltipRect, viewportWidth, viewportHeight) {
+    const margin = 8;
+    const left = Math.min(
+      Math.max(elementRect.left, margin),
+      Math.max(margin, viewportWidth - tooltipRect.width - margin)
+    );
+    let top = elementRect.bottom + margin;
+    if (top + tooltipRect.height > viewportHeight - margin) {
+      top = elementRect.top - tooltipRect.height - margin;
+    }
+    top = Math.max(margin, Math.min(top, viewportHeight - tooltipRect.height - margin));
+    return { left, top };
+  }
+
+  function showTooltip(element) {
     if (!tooltip || !element.classList?.contains('vocabmeld-translated')) return;
     
     // 如果是同一个元素且 tooltip 已显示，不重新计算位置
@@ -2258,9 +2273,9 @@ ${originalWord}
 
     tooltip.innerHTML = `
       <div class="vocabmeld-tooltip-header">
-        <span class="vocabmeld-tooltip-word">${translation}</span>
-        <span class="vocabmeld-tooltip-badge" data-difficulty="${difficulty}">${difficulty}</span>
-        <button class="vocabmeld-tooltip-btn vocabmeld-btn-memorize ${isInMemorizeList ? 'active' : ''}" data-original="${original}" data-translation="${translation}" title="${isInMemorizeList ? '已在记忆列表' : '添加到记忆列表'}">
+        <span class="vocabmeld-tooltip-word"></span>
+        <span class="vocabmeld-tooltip-badge"></span>
+        <button class="vocabmeld-tooltip-btn vocabmeld-btn-memorize">
           <svg viewBox="0 0 24 24" width="16" height="16">
             ${isInMemorizeList 
               ? '<path fill="currentColor" d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z"/>'
@@ -2269,23 +2284,21 @@ ${originalWord}
           </svg>
         </button>
       </div>
-      ${phonetic && config.showPhonetic ? `
-      <div class="vocabmeld-tooltip-phonetic vocabmeld-btn-speak" data-original="${original}" data-translation="${translation}" title="点击发音">
+      <div class="vocabmeld-tooltip-phonetic vocabmeld-btn-speak" title="点击发音">
         <svg viewBox="0 0 24 24" width="12" height="12">
           <path fill="currentColor" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z"/>
         </svg>
-        <span>${phonetic}</span>
+        <span></span>
       </div>
-      ` : ''}
-      <div class="vocabmeld-tooltip-original">原文: ${original}</div>
+      <div class="vocabmeld-tooltip-original"></div>
       <div class="vocabmeld-tooltip-dict"></div>
       <div class="vocabmeld-tooltip-actions">
-        <button class="vocabmeld-tooltip-btn vocabmeld-btn-learned" data-original="${original}" data-translation="${translation}" data-difficulty="${difficulty}" title="标记已学会">
+        <button class="vocabmeld-tooltip-btn vocabmeld-btn-learned" title="标记已学会">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/>
           </svg>
         </button>
-        <button class="vocabmeld-tooltip-btn vocabmeld-btn-retranslate" data-original="${original}" title="根据上下文重新翻译">
+        <button class="vocabmeld-tooltip-btn vocabmeld-btn-retranslate" title="根据上下文重新翻译">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="currentColor" d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
           </svg>
@@ -2293,50 +2306,40 @@ ${originalWord}
       </div>
     `;
 
-    // 使用 caretRangeFromPoint 找到鼠标所在行的位置
-    let posLeft, posTop;
-    const caretRange = document.caretRangeFromPoint(mouseX, mouseY);
-    if (caretRange && element.contains(caretRange.startContainer)) {
-      // 获取当前位置的行高和行底部位置
-      const tempRange = document.createRange();
-      tempRange.setStart(caretRange.startContainer, caretRange.startOffset);
-      tempRange.setEnd(caretRange.startContainer, caretRange.startOffset);
-      const caretRect = tempRange.getBoundingClientRect();
-      
-      // 找到该行的起始位置（向左扩展到行首）
-      const textNode = caretRange.startContainer;
-      if (textNode.nodeType === Node.TEXT_NODE) {
-        // 遍历找到当前行的起始字符
-        let lineStartOffset = 0;
-        for (let i = caretRange.startOffset; i >= 0; i--) {
-          tempRange.setStart(textNode, i);
-          tempRange.setEnd(textNode, i + 1 > textNode.length ? textNode.length : i + 1);
-          const charRect = tempRange.getBoundingClientRect();
-          if (Math.abs(charRect.top - caretRect.top) > 5) {
-            lineStartOffset = i + 1;
-            break;
-          }
-          lineStartOffset = i;
-        }
-        tempRange.setStart(textNode, lineStartOffset);
-        tempRange.setEnd(textNode, lineStartOffset + 1 > textNode.length ? textNode.length : lineStartOffset + 1);
-        const lineStartRect = tempRange.getBoundingClientRect();
-        posLeft = lineStartRect.left;
-        posTop = caretRect.bottom;
-      } else {
-        posLeft = caretRect.left;
-        posTop = caretRect.bottom;
-      }
-    } else {
-      // 回退方案
-      const rect = element.getBoundingClientRect();
-      posLeft = rect.left;
-      posTop = mouseY + 16;
-    }
-    
-    tooltip.style.left = posLeft + window.scrollX + 'px';
-    tooltip.style.top = posTop + window.scrollY + 2 + 'px';
     tooltip.style.display = 'block';
+    const tooltipWord = tooltip.querySelector('.vocabmeld-tooltip-word');
+    const tooltipBadge = tooltip.querySelector('.vocabmeld-tooltip-badge');
+    const memorizeButton = tooltip.querySelector('.vocabmeld-btn-memorize');
+    const phoneticElement = tooltip.querySelector('.vocabmeld-tooltip-phonetic');
+    const phoneticText = phoneticElement.querySelector('span');
+    const learnedButton = tooltip.querySelector('.vocabmeld-btn-learned');
+    const retranslateButton = tooltip.querySelector('.vocabmeld-btn-retranslate');
+
+    tooltipWord.textContent = translation;
+    tooltipBadge.textContent = difficulty;
+    tooltipBadge.setAttribute('data-difficulty', difficulty);
+    memorizeButton.classList.toggle('active', isInMemorizeList);
+    memorizeButton.title = isInMemorizeList ? '已在记忆列表' : '添加到记忆列表';
+    memorizeButton.setAttribute('data-original', original);
+    memorizeButton.setAttribute('data-translation', translation);
+    phoneticText.textContent = phonetic;
+    phoneticElement.hidden = !phonetic || !config.showPhonetic;
+    phoneticElement.setAttribute('data-original', original);
+    phoneticElement.setAttribute('data-translation', translation);
+    tooltip.querySelector('.vocabmeld-tooltip-original').textContent = `原文: ${original}`;
+    learnedButton.setAttribute('data-original', original);
+    learnedButton.setAttribute('data-translation', translation);
+    learnedButton.setAttribute('data-difficulty', difficulty);
+    retranslateButton.setAttribute('data-original', original);
+
+    const position = getTooltipPosition(
+      element.getBoundingClientRect(),
+      tooltip.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight
+    );
+    tooltip.style.left = `${position.left}px`;
+    tooltip.style.top = `${position.top}px`;
     
     // 显示词典数据（优先从缓存获取）
     const dictionaryType = config.dictionaryType || 'en-en';
@@ -2427,7 +2430,7 @@ ${originalWord}
 
       if (target) {
         cancelHideTooltip();
-        showTooltip(target, e.clientX, e.clientY);
+        showTooltip(target);
       } else if (tooltipTarget) {
         // 鼠标移入 tooltip 时取消隐藏
         cancelHideTooltip();

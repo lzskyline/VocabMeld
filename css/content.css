@@ -161,8 +161,26 @@
   opacity: 1 !important;
 }
 
+.vocabmeld-translated-stacked {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  vertical-align: middle !important;
+  line-height: 1.2 !important;
+}
+
+.vocabmeld-translated-stacked .vocabmeld-word,
+.vocabmeld-translated-stacked .vocabmeld-original {
+  display: block !important;
+  margin-left: 0 !important;
+}
+
+.vocabmeld-translated-stacked .vocabmeld-original {
+  font-size: 0.8em !important;
+}
+
 .vocabmeld-tooltip {
-  position: absolute !important;
+  position: fixed !important;
   z-index: 2147483647 !important;
   /* 背景色和边框色由 content.js 动态生成以支持配色切换 */
   background: #1e293b;
@@ -173,12 +191,19 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.1) !important;
   max-width: 300px !important;
+  max-height: min(60vh, 480px) !important;
+  overflow-y: auto !important;
+  overflow-wrap: anywhere !important;
   min-width: 180px !important;
   border: 1px solid #334155;
   box-sizing: border-box !important;
   line-height: 1.5 !important;
   text-align: left !important;
   pointer-events: auto !important;
+}
+
+.vocabmeld-tooltip .vocabmeld-tooltip-phonetic[hidden] {
+  display: none !important;
 }
 
 .vocabmeld-tooltip .vocabmeld-tooltip-header {
