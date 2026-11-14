@@ -156,6 +156,12 @@
     return detectedLang === nativeLang;
   }
 
+  function getMemorizeWord(original, translation) {
+    return isNativeLanguage(detectLanguage(original), config.nativeLanguage)
+      ? (translation || original)
+      : original;
+  }
+
   function isCodeText(text) {
     const codePatterns = [
       /^(const|let|var|function|class|import|export|return|if|else|for|while)\s/,
@@ -475,7 +481,7 @@
 
     const trimmedWord = word.trim();
     const list = config.memorizeList || [];
-    const exists = list.some(w => w.word === trimmedWord);
+    const exists = list.some(w => w.word.toLowerCase() === trimmedWord.toLowerCase());
 
     if (!exists) {
       list.push({ word: trimmedWord, addedAt: Date.now() });
@@ -491,8 +497,10 @@
           console.error('[VocabMeld] Error processing word:', trimmedWord, error);
         });
       }
+      return true;
     } else {
       showToast(`"${trimmedWord}" 已在记忆列表中`);
+      return false;
     }
   }
 
@@ -507,11 +515,11 @@
       // 调用翻译API获取翻译结果
       const results = await translateSpecificWords([trimmedWord]);
       if (results && results.length > 0) {
-        // 使用翻译结果（学习语言）添加到记忆列表
-        const translation = results[0].translation || trimmedWord;
-        addToMemorizeList(translation);
-        // 在页面上替换原文为带hover效果的翻译内容
-        processSpecificWords([trimmedWord]).catch(console.error);
+        const memorizeWord = getMemorizeWord(trimmedWord, results[0].translation);
+        const added = await addToMemorizeList(memorizeWord);
+        if (!added || memorizeWord.toLowerCase() !== trimmedWord.toLowerCase()) {
+          processSpecificWords([trimmedWord]).catch(console.error);
+        }
       } else {
         // 翻译失败，使用原文
         addToMemorizeList(trimmedWord);
@@ -528,7 +536,7 @@
     
     const trimmedWord = word.trim();
     const list = config.memorizeList || [];
-    const newList = list.filter(w => w.word !== trimmedWord);
+    const newList = list.filter(w => w.word.toLowerCase() !== trimmedWord.toLowerCase());
     
     if (newList.length !== list.length) {
       config.memorizeList = newList;
@@ -688,7 +696,7 @@
     return wrapper;
   }
 
-  function applyReplacements(element, replacements) {
+  function applyReplacements(element, replacements, allOccurrences = false) {
     if (!element || !replacements?.length) return 0;
 
     let count = 0;
@@ -702,7 +710,7 @@
           if (!parent) return NodeFilter.FILTER_REJECT;
           
           // 跳过已翻译的元素
-          if (parent.classList?.contains('vocabmeld-translated')) {
+          if (parent.closest('.vocabmeld-translated')) {
             return NodeFilter.FILTER_REJECT;
           }
           
@@ -745,67 +753,46 @@
 
     for (const replacement of sortedReplacements) {
       const { original, translation, phonetic, difficulty } = replacement;
+      if (!original) continue;
       const lowerOriginal = original.toLowerCase();
-      
-      // 每次替换后重新获取文本节点，因为DOM结构已改变
-      const textNodes = getTextNodes();
-      
-      for (let i = 0; i < textNodes.length; i++) {
-        const textNode = textNodes[i];
-        
-        // 检查节点是否仍然有效（DOM可能已改变）
-        if (!textNode.parentElement || !element.contains(textNode)) {
-          continue;
-        }
-        
-        const text = textNode.textContent;
-        const lowerText = text.toLowerCase();
-        
-        // 检查文本节点是否包含目标单词
-        if (!lowerText.includes(lowerOriginal)) continue;
-        
-        // 使用单词边界匹配，确保匹配完整单词
-        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // 匹配单词边界（包括中文标点）
-        const regex = new RegExp(`(^|[^\\w\\u4e00-\\u9fff])${escapedOriginal}([^\\w\\u4e00-\\u9fff]|$)`, 'i');
-        
-        let match = regex.exec(text);
-        let startIndex = match ? match.index + match[1].length : text.toLowerCase().indexOf(lowerOriginal);
-        
-        if (startIndex === -1) continue;
 
-        try {
-          const range = document.createRange();
-          range.setStart(textNode, startIndex);
-          range.setEnd(textNode, startIndex + original.length);
-          
-          const rangeContent = range.toString();
-          if (rangeContent.toLowerCase() !== lowerOriginal) continue;
+      let replaced;
+      do {
+        replaced = false;
+        // 每次替换后重新获取文本节点，因为DOM结构已改变
+        const textNodes = getTextNodes();
 
-          // 检查是否已经被替换（检查父元素是否是已翻译的元素）
-          let parent = textNode.parentElement;
-          let isAlreadyReplaced = false;
-          while (parent && parent !== element) {
-            if (parent.classList?.contains('vocabmeld-translated')) {
-              isAlreadyReplaced = true;
-              break;
-            }
-            parent = parent.parentElement;
+        for (const textNode of textNodes) {
+          if (!textNode.parentElement || !element.contains(textNode)) {
+            continue;
           }
-          
-          if (isAlreadyReplaced) continue;
 
-          const wrapper = createReplacementElement(original, translation, phonetic, difficulty);
-          range.deleteContents();
-          range.insertNode(wrapper);
-          count++;
-          
-          // 找到匹配后立即跳出，因为DOM结构已改变，需要重新获取节点
-          break;
-        } catch (e) {
-          console.error('[VocabMeld] Replacement error:', e, original);
+          const text = textNode.textContent;
+          if (!text.toLowerCase().includes(lowerOriginal)) continue;
+
+          const match = targetWordPattern(original).exec(text);
+          if (!match) continue;
+          const startIndex = match.index + (match[1]?.length || 0);
+
+          try {
+            const range = document.createRange();
+            range.setStart(textNode, startIndex);
+            range.setEnd(textNode, startIndex + original.length);
+
+            const rangeContent = range.toString();
+            if (rangeContent.toLowerCase() !== lowerOriginal) continue;
+
+            const wrapper = createReplacementElement(original, translation, phonetic, difficulty);
+            range.deleteContents();
+            range.insertNode(wrapper);
+            count++;
+            replaced = true;
+            break;
+          } catch (e) {
+            console.error('[VocabMeld] Replacement error:', e, original);
+          }
         }
-      }
+      } while (allOccurrences && replaced);
     }
 
     if (count > 0) element.setAttribute('data-vocabmeld-processed', 'true');
@@ -1473,22 +1460,24 @@ ${originalWord}
     }
   }
 
+  function targetWordPattern(word, flags = 'iu') {
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/u.test(word)) {
+      return new RegExp(escapedWord, flags);
+    }
+    return new RegExp(
+      `(^|[^\\p{L}\\p{M}\\p{N}_])${escapedWord}(?=$|[^\\p{L}\\p{M}\\p{N}_])`,
+      flags
+    );
+  }
+
   async function processSpecificWords(targetWords) {
     if (!config?.enabled || !targetWords?.length) {
       return 0;
     }
 
-    const targetWordSet = new Set(targetWords.map(w => w.toLowerCase()));
+    const targetPatterns = targetWords.filter(Boolean).map(word => targetWordPattern(word));
     let processed = 0;
-
-    // 首先检查已翻译的元素，看是否有目标单词已经被翻译了
-    const alreadyTranslated = [];
-    document.querySelectorAll('.vocabmeld-translated').forEach(el => {
-      const original = el.getAttribute('data-original');
-      if (original && targetWordSet.has(original.toLowerCase())) {
-        alreadyTranslated.push(original.toLowerCase());
-      }
-    });
 
     // 查找页面中包含目标单词的文本节点（包括已处理过的容器）
     const textNodes = [];
@@ -1497,6 +1486,7 @@ ${originalWord}
         // 跳过不应该处理的节点类型
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.closest('.vocabmeld-translated')) return NodeFilter.FILTER_REJECT;
         
         // 跳过脚本、样式等标签
         if (SKIP_TAGS.includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
@@ -1531,16 +1521,7 @@ ${originalWord}
     let node;
     while (node = walker.nextNode()) {
       const text = node.textContent;
-      // 检查文本节点是否包含目标单词（作为完整单词）
-      const words = text.match(/\b[a-zA-Z]{5,}\b/g) || [];
-      const chineseWords = text.match(/[\u4e00-\u9fff]{2,4}/g) || [];
-      const allWords = [...words, ...chineseWords];
-
-      // 检查是否包含目标单词（且该单词还没有被翻译）
-      const containsTarget = allWords.some(word => {
-        const lowerWord = word.toLowerCase();
-        return targetWordSet.has(lowerWord) && !alreadyTranslated.includes(lowerWord);
-      });
+      const containsTarget = targetPatterns.some(pattern => pattern.test(text));
 
       if (containsTarget) {
         textNodes.push(node);
@@ -1554,10 +1535,12 @@ ${originalWord}
 
     // 构造包含目标单词的文本段落用于处理
     const segments = [];
+    const seenContainers = new Set();
     for (const textNode of textNodes) {
       // 获取更大的上下文（父元素的文本内容）
       const container = textNode.parentElement;
-      if (!container) continue;
+      if (!container || seenContainers.has(container)) continue;
+      seenContainers.add(container);
       
       // 获取容器的完整文本内容（包括已翻译的部分）
       const containerText = getTextContent(container);
@@ -1571,27 +1554,8 @@ ${originalWord}
         }
       }
 
-      if (contextText.length >= 10) {
-        const path = getElementPath(container);
-        const fingerprint = generateFingerprint(contextText, path);
-        
-        // 检查是否已经处理过这个段落
-        const isProcessed = container.hasAttribute('data-vocabmeld-processed') || 
-                           container.closest('[data-vocabmeld-processed]');
-        
-        segments.push({
-          element: container,
-          text: contextText,
-          fingerprint: fingerprint,
-          isProcessed: !!isProcessed
-        });
-      }
+      segments.push({ element: container, text: contextText });
     }
-
-    // 去重
-    const uniqueSegments = segments.filter((segment, index, self) =>
-      index === self.findIndex(s => s.fingerprint === segment.fingerprint)
-    );
 
     // 获取目标单词的翻译
     const translations = await translateSpecificWords(targetWords);
@@ -1601,7 +1565,7 @@ ${originalWord}
     }
 
     // 应用到每个段落
-    for (const segment of uniqueSegments) {
+    for (const segment of segments) {
       // 为每个翻译添加位置信息（基于当前段落的文本）
       const replacements = translations.map(translation => {
         const position = segment.text.toLowerCase().indexOf(translation.original.toLowerCase());
@@ -1616,7 +1580,7 @@ ${originalWord}
 
       if (replacements.length === 0) continue;
 
-      const count = applyReplacements(segment.element, replacements);
+      const count = applyReplacements(segment.element, replacements, true);
       processed += count;
       
       // 后台预加载词典数据
@@ -1675,6 +1639,7 @@ ${originalWord}
     if (isProcessing || pendingContainers.size === 0) return;
 
     isProcessing = true;
+    const processingMarked = [];
 
     try {
       const containers = Array.from(pendingContainers).slice(0, MAX_SEGMENTS_PER_BATCH);
@@ -1695,11 +1660,6 @@ ${originalWord}
         if (container.hasAttribute('data-vocabmeld-processed') ||
             container.hasAttribute('data-vocabmeld-processing')) continue;
 
-        // 立即标记为正在处理，防止重复添加到队列
-        container.setAttribute('data-vocabmeld-processing', 'true');
-
-        if (container.hasAttribute('data-vocabmeld-processed')) continue;
-        
         const text = getTextContent(container);
         if (!text || text.length < 50) continue;
         if (isCodeText(text)) continue;
@@ -1711,11 +1671,15 @@ ${originalWord}
         // 过滤白名单词汇
         let filteredText = text;
         for (const word of whitelistWords) {
-          const regex = new RegExp(`\\b${word}\\b`, 'gi');
-          filteredText = filteredText.replace(regex, '');
+          if (!word) continue;
+          const regex = targetWordPattern(word, 'giu');
+          const isCjk = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/u.test(word);
+          filteredText = filteredText.replace(regex, (...args) => isCjk ? '' : args[1]);
         }
         
         if (filteredText.trim().length >= 30) {
+          container.setAttribute('data-vocabmeld-processing', 'true');
+          processingMarked.push(container);
           segments.push({ element: container, text: text.slice(0, 2000), filteredText, fingerprint, path });
         }
       }
@@ -1732,6 +1696,7 @@ ${originalWord}
         }
       }
     } finally {
+      processingMarked.forEach(container => container.removeAttribute('data-vocabmeld-processing'));
       isProcessing = false;
       
       // 如果还有待处理的容器，继续处理
@@ -2266,8 +2231,9 @@ ${originalWord}
     const difficulty = element.getAttribute('data-difficulty');
     
     // 检查是否已在记忆列表中
-    const isInMemorizeList = (config.memorizeList || []).some(w => 
-      w.word.toLowerCase() === original.toLowerCase()
+    const memorizeWord = getMemorizeWord(original, translation);
+    const isInMemorizeList = (config.memorizeList || []).some(w =>
+      w.word.toLowerCase() === memorizeWord.toLowerCase()
     );
     
     // 判断需要查询词典的单词（目标语言）
@@ -2524,8 +2490,7 @@ ${originalWord}
         const original = memorizeBtn.getAttribute('data-original');
         const translation = memorizeBtn.getAttribute('data-translation');
         const isActive = memorizeBtn.classList.contains('active');
-        // 添加学习语言（translation）而不是原文
-        const wordToAdd = translation || original;
+        const wordToAdd = getMemorizeWord(original, translation);
 
         if (!isActive) {
           addToMemorizeList(wordToAdd);

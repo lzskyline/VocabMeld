@@ -29,6 +29,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 'ep_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[character]));
+  }
+
   // 当前节点配置状态
   let apiEndpoints = [];
   let editingEndpointId = null;
@@ -180,6 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     importDataBtn: document.getElementById('importDataBtn'),
     importFileInput: document.getElementById('importFileInput'),
     exportSettings: document.getElementById('exportSettings'),
+    exportApiKeys: document.getElementById('exportApiKeys'),
     exportWords: document.getElementById('exportWords'),
     exportStats: document.getElementById('exportStats'),
     exportCache: document.getElementById('exportCache')
@@ -854,7 +865,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         return `
           <div class="endpoint-card ${ep.enabled ? 'enabled' : 'disabled'}"
-               data-id="${ep.id}"
+               data-id="${escapeHtml(ep.id)}"
                draggable="true">
             <div class="endpoint-drag-handle">
               <svg viewBox="0 0 24 24" width="16" height="16">
@@ -863,7 +874,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="endpoint-info">
               <div class="endpoint-header">
-                <span class="endpoint-name">${ep.name}</span>
+                <span class="endpoint-name">${escapeHtml(ep.name)}</span>
               </div>
               <div class="endpoint-usage">
                 <span class="usage-badge" title="当前时间窗口请求数${ep.qpm > 0 ? '/限制' : ''}">
@@ -875,12 +886,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               </div>
             </div>
             <div class="endpoint-actions">
-              <button class="btn-icon endpoint-toggle ${ep.enabled ? 'enabled' : 'disabled'}" data-id="${ep.id}" title="${ep.enabled ? '点击停用' : '点击启用'}">
+              <button class="btn-icon endpoint-toggle ${ep.enabled ? 'enabled' : 'disabled'}" data-id="${escapeHtml(ep.id)}" title="${ep.enabled ? '点击停用' : '点击启用'}">
                 <svg viewBox="0 0 24 24" width="18" height="18">
                   <path fill="currentColor" d="${ep.enabled ? 'M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z' : 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z'}"/>
                 </svg>
               </button>
-              <button class="btn-icon endpoint-edit" data-id="${ep.id}" title="编辑">
+              <button class="btn-icon endpoint-edit" data-id="${escapeHtml(ep.id)}" title="编辑">
                 <svg viewBox="0 0 24 24" width="18" height="18">
                   <path fill="currentColor" d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/>
                 </svg>
@@ -2133,11 +2144,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       // 根据勾选项添加数据
       if (elements.exportSettings.checked) {
+        const includeApiKeys = elements.exportApiKeys.checked;
+        const apiEndpoints = includeApiKeys ? syncData.apiEndpoints
+          : syncData.apiEndpoints?.map(endpoint => ({ ...endpoint, apiKey: '' }));
+        const apiConfigs = includeApiKeys ? syncData.apiConfigs
+          : syncData.apiConfigs && Object.fromEntries(
+            Object.entries(syncData.apiConfigs).map(([name, config]) => [name, { ...config, apiKey: '' }])
+          );
         exportData.settings = {
+          apiEndpoints,
           apiEndpoint: syncData.apiEndpoint,
-          apiKey: syncData.apiKey,
+          apiKey: includeApiKeys ? syncData.apiKey : '',
           modelName: syncData.modelName,
-          apiConfigs: syncData.apiConfigs,
+          apiConfigs,
           currentApiConfig: syncData.currentApiConfig,
           nativeLanguage: syncData.nativeLanguage,
           targetLanguage: syncData.targetLanguage,
