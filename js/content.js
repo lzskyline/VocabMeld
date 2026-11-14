@@ -195,12 +195,78 @@
     return relevantSentences.join('. ').trim() + (relevantSentences.length > 0 ? '.' : '');
   }
 
+  // ============ 发音能力 ============
+  function getSpeechSynthesisVoice(preferredVoice, lang) {
+    if (!window.speechSynthesis?.getVoices) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    if (voices.length === 0) return null;
+
+    if (preferredVoice) {
+      const exactMatch = voices.find(voice => voice.name === preferredVoice);
+      if (exactMatch) return exactMatch;
+    }
+
+    const langPrefix = (lang || '').split('-')[0].toLowerCase();
+    if (langPrefix) {
+      const langMatch = voices.find(voice => (voice.lang || '').toLowerCase().startsWith(langPrefix));
+      if (langMatch) return langMatch;
+    }
+
+    return voices[0] || null;
+  }
+
+  function speakWithWebSpeech(text, lang) {
+    if (!text || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
+      return false;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang || 'en-US';
+
+    const configuredRate = Number(config?.ttsRate);
+    utterance.rate = Number.isFinite(configuredRate) ? configuredRate : 1.0;
+
+    const voice = getSpeechSynthesisVoice(config?.ttsVoice || '', utterance.lang);
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    return true;
+  }
+
+  async function speakWithFallback(text, lang) {
+    const usedExtensionTts = await new Promise((resolve) => {
+      if (!chrome?.runtime?.sendMessage) {
+        resolve(false);
+        return;
+      }
+
+      try {
+        chrome.runtime.sendMessage({ action: 'speak', text, lang }, (response) => {
+          if (chrome.runtime.lastError || !response?.success) {
+            resolve(false);
+            return;
+          }
+          resolve(true);
+        });
+      } catch (error) {
+        resolve(false);
+      }
+    });
+
+    if (usedExtensionTts) return true;
+    return speakWithWebSpeech(text, lang);
+  }
+
   // ============ 存储操作 ============
   async function loadConfig() {
     return new Promise((resolve) => {
       chrome.storage.sync.get(null, (syncResult) => {
         // 从 local 获取词汇列表（避免 sync 的 8KB 限制）
         chrome.storage.local.get(['learnedWords', 'memorizeList'], (localResult) => {
+          const parsedTtsRate = parseFloat(syncResult.ttsRate);
           const normalizedDifficultyRange = normalizeDifficultyRange(
             syncResult.difficultyRange,
             syncResult.difficultyLevel || 'B1'
@@ -222,6 +288,8 @@
             showAddMemorize: syncResult.showAddMemorize ?? true,
             cacheMaxSize: syncResult.cacheMaxSize || DEFAULT_CACHE_MAX_SIZE,
             translationStyle: syncResult.translationStyle || 'translation-original',
+            ttsVoice: syncResult.ttsVoice || '',
+            ttsRate: Number.isFinite(parsedTtsRate) ? parsedTtsRate : 1.0,
             theme: syncResult.theme || 'dark',
             enabled: syncResult.enabled ?? true,
             siteMode: syncResult.siteMode || 'all',
@@ -763,6 +831,8 @@
   function restoreAll() {
     document.querySelectorAll('.vocabmeld-translated').forEach(restoreOriginal);
     document.querySelectorAll('[data-vocabmeld-processed]').forEach(el => el.removeAttribute('data-vocabmeld-processed'));
+    document.querySelectorAll('[data-vocabmeld-loading]').forEach(el => el.removeAttribute('data-vocabmeld-loading'));
+    document.querySelectorAll('[data-vocabmeld-processing]').forEach(el => el.removeAttribute('data-vocabmeld-processing'));
     document.querySelectorAll('[data-vocabmeld-observing]').forEach(el => el.removeAttribute('data-vocabmeld-observing'));
     processedFingerprints.clear();
     pendingContainers.clear();
@@ -1653,6 +1723,7 @@ ${originalWord}
       // 合并多个段落为一个请求，减少API调用次数
       for (let i = 0; i < segments.length; i += MAX_SEGMENTS_PER_REQUEST) {
         const batch = segments.slice(i, i + MAX_SEGMENTS_PER_REQUEST);
+        batch.forEach(segment => segment.element?.setAttribute('data-vocabmeld-loading', 'true'));
         await processBatchSegments(batch, whitelistWords);
         
         // 添加请求间隔，避免触发API速率限制
@@ -1673,6 +1744,9 @@ ${originalWord}
   // 批量处理多个段落（合并为一个API请求）
   async function processBatchSegments(segments, whitelistWords) {
     if (segments.length === 0) return;
+    const clearLoadingState = () => {
+      segments.forEach(segment => segment.element?.removeAttribute('data-vocabmeld-loading'));
+    };
 
     // 合并所有段落的文本，用分隔符隔开
     const combinedText = segments.map(s => s.filteredText).join('\n\n---\n\n');
@@ -1703,7 +1777,8 @@ ${originalWord}
 
       // 处理异步结果
       if (result.async) {
-        result.async.then(asyncReplacements => {
+        try {
+          const asyncReplacements = await result.async;
           if (asyncReplacements?.length) {
             for (const segment of segments) {
               const segmentText = segment.text.toLowerCase();
@@ -1727,12 +1802,14 @@ ${originalWord}
               }
             }
           }
-        }).catch(error => {
+        } catch (error) {
           console.error('[VocabMeld] Async translation error:', error);
-        });
+        }
       }
     } catch (e) {
       console.error('[VocabMeld] Batch processing error:', e);
+    } finally {
+      clearLoadingState();
     }
   }
 
@@ -2435,7 +2512,7 @@ ${originalWord}
                      config.targetLanguage === 'ja' ? 'ja-JP' :
                      config.targetLanguage === 'ko' ? 'ko-KR' : 'en-US';
         
-        chrome.runtime.sendMessage({ action: 'speak', text: word, lang });
+        speakWithFallback(word, lang);
         return;
       }
       

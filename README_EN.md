@@ -38,9 +38,18 @@
 
 ### Installation
 
+#### Chrome
+
 1. Open Chrome, navigate to `chrome://extensions/`
 2. Enable "Developer mode"
 3. Click "Load unpacked" and select this project folder
+
+#### Safari
+
+1. Run in terminal: `xcrun safari-web-extension-converter <project-folder>`
+2. The command generates a new project folder and opens Xcode automatically
+3. Run one Build in Xcode (`⌘B`)
+4. Open Safari → Settings → Developer, then check "Allow unsigned extensions"
 
 ### API Configuration
 

@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let apiEndpoints = [];
   let editingEndpointId = null;
   let draggedItem = null;
+  let endpointModalPointerDownOnOverlay = false;
 
   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
@@ -637,64 +638,114 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 加载可用声音列表（只显示学习语言相关的声音）
-  function loadVoices(selectedVoice, resetIfMismatch = false) {
-    chrome.runtime.sendMessage({ action: 'getVoices' }, (response) => {
-      const voices = response?.voices || [];
-      const select = elements.ttsVoice;
-      const targetLang = elements.targetLanguage.value;
-      
-      // 获取目标语言的语言代码前缀
-      const langPrefix = getLangPrefix(targetLang);
-      
-      // 清空现有选项，保留默认
-      select.innerHTML = '<option value="">系统默认</option>';
-      
-      // 只筛选匹配学习语言的声音
-      const matchingVoices = voices.filter(voice => {
-        const voiceLang = voice.lang || '';
-        return voiceLang.startsWith(langPrefix);
-      });
-      
-      // 如果没有匹配的声音，显示提示
-      if (matchingVoices.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = '无可用声音';
-        option.disabled = true;
-        select.appendChild(option);
-        // 清空存储的声音设置
-        if (resetIfMismatch) {
-          chrome.storage.sync.set({ ttsVoice: '' });
-        }
-        return;
-      }
-      
-      // 检查选中的声音是否与当前语言匹配
-      const selectedVoiceMatches = selectedVoice && matchingVoices.some(v => v.voiceName === selectedVoice);
-      
-      // 如果需要重置且不匹配，清空声音设置
-      if (resetIfMismatch && selectedVoice && !selectedVoiceMatches) {
-        selectedVoice = '';
+  function renderVoiceOptions(voices, selectedVoice, resetIfMismatch = false) {
+    const select = elements.ttsVoice;
+    const targetLang = elements.targetLanguage.value;
+    const langPrefix = getLangPrefix(targetLang);
+
+    select.innerHTML = '<option value="">系统默认</option>';
+
+    const matchingVoices = voices.filter(voice => {
+      const voiceLang = voice.lang || '';
+      return voiceLang.startsWith(langPrefix);
+    });
+
+    if (matchingVoices.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = '无可用声音';
+      option.disabled = true;
+      select.appendChild(option);
+      if (resetIfMismatch) {
         chrome.storage.sync.set({ ttsVoice: '' });
       }
-      
-      // 添加匹配的声音选项
-      matchingVoices.forEach(voice => {
-        const option = document.createElement('option');
-        option.value = voice.voiceName;
-        // 简化显示名称
-        const displayName = voice.voiceName
-          .replace(/Google\s*/i, '')
-          .replace(/Microsoft\s*/i, '')
-          .replace(/Apple\s*/i, '');
-        option.textContent = displayName;
-        if (voice.voiceName === selectedVoice) {
-          option.selected = true;
-        }
-        select.appendChild(option);
-      });
+      return;
+    }
+
+    const selectedVoiceMatches = selectedVoice && matchingVoices.some(v => v.voiceName === selectedVoice);
+    if (resetIfMismatch && selectedVoice && !selectedVoiceMatches) {
+      selectedVoice = '';
+      chrome.storage.sync.set({ ttsVoice: '' });
+    }
+
+    matchingVoices.forEach(voice => {
+      const option = document.createElement('option');
+      option.value = voice.voiceName;
+      const displayName = voice.voiceName
+        .replace(/Google\s*/i, '')
+        .replace(/Microsoft\s*/i, '')
+        .replace(/Apple\s*/i, '');
+      option.textContent = displayName;
+      if (voice.voiceName === selectedVoice) {
+        option.selected = true;
+      }
+      select.appendChild(option);
     });
+  }
+
+  function getWebSpeechVoices() {
+    if (!window.speechSynthesis?.getVoices) {
+      return Promise.resolve([]);
+    }
+
+    const initialVoices = window.speechSynthesis.getVoices() || [];
+    if (initialVoices.length > 0) {
+      return Promise.resolve(initialVoices);
+    }
+
+    return new Promise(resolve => {
+      let settled = false;
+      let timer = null;
+
+      const done = (voices) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        window.speechSynthesis.removeEventListener?.('voiceschanged', onVoicesChanged);
+        resolve(voices || []);
+      };
+
+      const onVoicesChanged = () => {
+        done(window.speechSynthesis.getVoices() || []);
+      };
+
+      window.speechSynthesis.addEventListener?.('voiceschanged', onVoicesChanged);
+      timer = setTimeout(() => {
+        done(window.speechSynthesis.getVoices() || []);
+      }, 1200);
+    });
+  }
+
+  // 加载可用声音列表（只显示学习语言相关的声音）
+  function loadVoices(selectedVoice, resetIfMismatch = false) {
+    const renderFallbackVoices = () => {
+      getWebSpeechVoices()
+        .then(voices => voices.map(voice => ({
+          voiceName: voice.name,
+          lang: voice.lang || ''
+        })))
+        .then(mapped => renderVoiceOptions(mapped, selectedVoice, resetIfMismatch))
+        .catch(() => renderVoiceOptions([], selectedVoice, resetIfMismatch));
+    };
+
+    if (!chrome?.runtime?.sendMessage) {
+      renderFallbackVoices();
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage({ action: 'getVoices' }, (response) => {
+        const hasRuntimeError = !!chrome.runtime.lastError;
+        const voices = response?.voices;
+        if (hasRuntimeError || response?.error || !Array.isArray(voices) || voices.length === 0) {
+          renderFallbackVoices();
+          return;
+        }
+        renderVoiceOptions(voices, selectedVoice, resetIfMismatch);
+      });
+    } catch (error) {
+      renderFallbackVoices();
+    }
   }
 
   // 获取语言代码前缀
@@ -991,6 +1042,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     elements.testEndpointResult.textContent = '';
     elements.testEndpointResult.className = 'test-result';
+    endpointModalPointerDownOnOverlay = false;
     elements.endpointModal.classList.add('show');
   }
 
@@ -998,6 +1050,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function closeEndpointModal() {
     elements.endpointModal.classList.remove('show');
     editingEndpointId = null;
+    endpointModalPointerDownOnOverlay = false;
   }
 
   // 保存节点
@@ -1386,6 +1439,75 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function getPreferredSpeechVoice(preferredVoice, lang) {
+    if (!window.speechSynthesis?.getVoices) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    if (voices.length === 0) return null;
+
+    if (preferredVoice) {
+      const exactMatch = voices.find(voice => voice.name === preferredVoice);
+      if (exactMatch) return exactMatch;
+    }
+
+    const langPrefix = (lang || '').split('-')[0].toLowerCase();
+    if (langPrefix) {
+      const langMatch = voices.find(voice => (voice.lang || '').toLowerCase().startsWith(langPrefix));
+      if (langMatch) return langMatch;
+    }
+
+    return voices[0] || null;
+  }
+
+  function speakViaWebSpeech(text, lang, rate, preferredVoice) {
+    if (!text || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
+      return false;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang || 'en-US';
+
+    const numericRate = Number(rate);
+    utterance.rate = Number.isFinite(numericRate) ? numericRate : 1.0;
+
+    const voice = getPreferredSpeechVoice(preferredVoice, utterance.lang);
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    return true;
+  }
+
+  function speakTextWithFallback(text, lang) {
+    if (!text) return;
+
+    chrome.storage.sync.get(['ttsRate', 'ttsVoice'], (settings) => {
+      const ttsRate = Number(settings?.ttsRate);
+      const rate = Number.isFinite(ttsRate) ? ttsRate : 1.0;
+      const preferredVoice = settings?.ttsVoice || '';
+
+      const fallback = () => {
+        speakViaWebSpeech(text, lang, rate, preferredVoice);
+      };
+
+      if (!chrome?.runtime?.sendMessage) {
+        fallback();
+        return;
+      }
+
+      try {
+        chrome.runtime.sendMessage({ action: 'speak', text, lang }, (response) => {
+          if (chrome.runtime.lastError || !response?.success) {
+            fallback();
+          }
+        });
+      } catch (error) {
+        fallback();
+      }
+    });
+  }
+
   // 发音功能
   function speakWord(word) {
     if (!word) return;
@@ -1400,7 +1522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (isJapanese) lang = 'ja-JP';
     else if (isKorean) lang = 'ko-KR';
     
-    chrome.runtime.sendMessage({ action: 'speak', text: word, lang });
+    speakTextWithFallback(word, lang);
   }
 
   // 搜索和筛选已学会词汇
@@ -1699,11 +1821,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const testText = testTexts[targetLang] || testTexts['en'];
       const lang = langCodes[targetLang] || 'en-US';
       
-      chrome.runtime.sendMessage({ 
-        action: 'speak', 
-        text: testText, 
-        lang: lang
-      });
+      speakTextWithFallback(testText, lang);
     });
   }
 
@@ -1865,12 +1983,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    // 点击弹窗背景关闭
+    // 点击弹窗背景关闭（仅完整外部点击才关闭）
     if (elements.endpointModal) {
-      elements.endpointModal.addEventListener('click', (e) => {
-        if (e.target === elements.endpointModal) {
+      elements.endpointModal.addEventListener('pointerdown', (e) => {
+        endpointModalPointerDownOnOverlay = (e.target === elements.endpointModal);
+      });
+      elements.endpointModal.addEventListener('pointerup', (e) => {
+        const pointerUpOnOverlay = (e.target === elements.endpointModal);
+        if (endpointModalPointerDownOnOverlay && pointerUpOnOverlay) {
           closeEndpointModal();
         }
+        endpointModalPointerDownOnOverlay = false;
+      });
+      elements.endpointModal.addEventListener('pointercancel', () => {
+        endpointModalPointerDownOnOverlay = false;
       });
     }
 
