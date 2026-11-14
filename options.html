@@ -838,6 +838,22 @@
             </div>
           </div>
         </div>
+        <div class="form-group">
+          <label>WebDAV 远程备份</label>
+          <p class="help-text">输入 HTTPS 备份文件完整地址。用户名和密码仅用于本次操作，不会保存；远程备份使用上方的导出选项。请保护好包含密钥的备份。</p>
+          <div class="webdav-settings">
+            <label for="webdavUrl">备份文件地址</label>
+            <input id="webdavUrl" type="url" placeholder="https://example.com/webdav/vocabmeld-backup.json" autocomplete="off">
+            <label for="webdavUsername">用户名</label>
+            <input id="webdavUsername" type="text" autocomplete="off">
+            <label for="webdavPassword">密码或应用专用密码</label>
+            <input id="webdavPassword" type="password" autocomplete="new-password">
+            <div class="export-actions">
+              <button type="button" class="btn btn-primary" id="webdavUpload">上传备份</button>
+              <button type="button" class="btn btn-secondary" id="webdavRestore">恢复备份</button>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 

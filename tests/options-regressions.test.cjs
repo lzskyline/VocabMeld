@@ -29,22 +29,18 @@ test('endpoint card escapes imported IDs and names', () => {
 });
 
 test('settings export preserves endpoints and requires opt-in for all API keys', async () => {
-  const handlerSource = section("    elements.exportDataBtn.addEventListener('click', async () => {", '    // 导入数据');
+  const handlerSource = section('    async function collectBackupData()', '    // 导出数据');
   async function exportSettings(syncData, includeKeys) {
-    let handler, blob;
     const context = {
       elements: {
-        exportDataBtn: { addEventListener: (event, fn) => { handler = fn; } },
         exportSettings: { checked: true }, exportApiKeys: { checked: includeKeys },
         exportWords: { checked: false }, exportStats: { checked: false }, exportCache: { checked: false }
       },
-      chrome: { storage: { sync: { get: (keys, callback) => callback(syncData) } } },
-      Blob, URL: { createObjectURL: value => { blob = value; return 'blob:test'; }, revokeObjectURL() {} },
-      document: { createElement: () => ({ click() {} }) }, Date
+      chrome: { storage: { sync: { get: async () => syncData } } },
+      Date
     };
-    vm.runInNewContext(handlerSource, context);
-    await handler();
-    return JSON.parse(await blob.text()).settings;
+    vm.runInNewContext(handlerSource + '\nthis.collect = collectBackupData;', context);
+    return JSON.parse(JSON.stringify((await context.collect()).settings));
   }
   const syncData = {
     apiKey: 'single-secret',
@@ -65,4 +61,89 @@ test('settings export preserves endpoints and requires opt-in for all API keys',
   assert.deepEqual(full.apiConfigs, syncData.apiConfigs);
   assert.equal(full.apiKey, syncData.apiKey);
   assert.equal('apiEndpoints' in await exportSettings({}, false), false);
+});
+
+test('WebDAV uses HTTPS, explicit credentials and refuses unsafe URLs and HTTP failures', async () => {
+  const calls = [];
+  const context = {
+    elements: {
+      webdavUrl: { value: 'https://dav.example/backups/data.json' },
+      webdavUsername: { value: '用户' },
+      webdavPassword: { value: 'secret' }
+    },
+    URL, TextEncoder, btoa,
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 201 };
+    }
+  };
+  const request = section('    async function webdavRequest(', '    elements.webdavUpload.addEventListener');
+  vm.runInNewContext(request + '\nthis.request = webdavRequest;', context);
+  await context.request('PUT', '{"version":"1.0"}');
+  assert.equal(calls[0].url, 'https://dav.example/backups/data.json');
+  assert.equal(calls[0].options.method, 'PUT');
+  assert.equal(calls[0].options.redirect, 'error');
+  assert.equal(calls[0].options.credentials, 'omit');
+  assert.equal(Buffer.from(calls[0].options.headers.Authorization.slice(6), 'base64').toString(), '用户:secret');
+  await context.request('GET');
+  assert.equal(calls[1].options.method, 'GET');
+  for (const url of [
+    'http://dav.example/data.json', 'https://user:pass@dav.example/data.json',
+    'https://dav.example/data.json?token=secret', 'https://dav.example/data.json#fragment',
+    'https://dav.example/directory/'
+  ]) {
+    context.elements.webdavUrl.value = url;
+    await assert.rejects(context.request('GET'), /HTTPS/);
+  }
+  context.elements.webdavUrl.value = 'https://dav.example/data.json';
+  context.fetch = async () => ({ ok: false, status: 401 });
+  await assert.rejects(context.request('GET'), /HTTP 401/);
+});
+
+test('backup restore validates input, removes duplicate cache entries, and surfaces storage errors', async () => {
+  const writes = [];
+  const context = {
+    chrome: { storage: {
+      sync: { set: async value => writes.push(['sync', value]) },
+      local: { set: async value => writes.push(['local', value]) }
+    } }
+  };
+  const restore = section('    async function restoreBackupData(', '    async function webdavRequest(');
+  vm.runInNewContext(restore + '\nthis.restore = restoreBackupData;', context);
+  await assert.rejects(context.restore({ version: '1.0', cache: {} }), /格式/);
+  assert.equal(writes.length, 0);
+  await context.restore({
+    version: '0.9', settings: JSON.parse('{"theme":"dark","__proto__":{"polluted":true},"unrelated":"ignore"}'),
+    cache: [{ key: 'one', value: 1 }, { key: 'one', value: 2 }]
+  });
+  assert.equal(writes[0][1].theme, 'dark');
+  assert.equal(Object.hasOwn(writes[0][1], '__proto__'), false);
+  assert.equal(Object.hasOwn(writes[0][1], 'unrelated'), false);
+  assert.equal(writes[1][1].vocabmeld_word_cache.length, 1);
+  context.chrome.storage.sync.set = async () => { throw new Error('quota exceeded'); };
+  await assert.rejects(context.restore({ version: '1.0', settings: { theme: 'light' } }), /quota exceeded/);
+});
+
+test('connection test explains 403 without implying every 403 has the same cause', async () => {
+  const context = {
+    elements: {
+      endpointUrl: { value: 'https://api.example/v1/chat/completions' },
+      endpointApiKey: { value: 'test-key' },
+      endpointModel: { value: 'model' },
+      testEndpointBtn: {},
+      testEndpointResult: {}
+    },
+    chrome: { runtime: {
+      getURL: () => 'chrome-extension://example/',
+      sendMessage: (request, callback) => callback({ success: false, status: 403, message: 'HTTP 403' })
+    } },
+    showGlobalToast() {},
+    showEndpointToast() {}
+  };
+  const handler = section('  async function testEndpointConnection(', '  // 显示全局提示');
+  vm.runInNewContext(handler + '\nthis.testConnection = testEndpointConnection;', context);
+  await context.testConnection();
+  assert.match(context.elements.testEndpointResult.textContent, /chrome-extension:\/\/example/);
+  assert.match(context.elements.testEndpointResult.textContent, /密钥权限/);
+  assert.equal(context.elements.testEndpointBtn.disabled, false);
 });
