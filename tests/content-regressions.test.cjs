@@ -14,6 +14,43 @@ function section(start, end) {
 
 const matcher = section('  function targetWordPattern(', '  async function processSpecificWords(');
 
+test('container discovery includes semantic paragraphs with nested or split short text nodes', () => {
+  const paragraphWithNestedText = {
+    tagName: 'P',
+    childNodes: [{ nodeType: 1 }],
+    textContent: 'A paragraph whose content is entirely inside inline elements.'
+  };
+  const paragraphWithSplitText = {
+    tagName: 'P',
+    childNodes: [
+      { nodeType: 3, textContent: 'Short ' },
+      { nodeType: 3, textContent: 'text nodes ' },
+      { nodeType: 3, textContent: 'combine.' }
+    ],
+    textContent: 'Short text nodes combine.'
+  };
+  const wrapper = { tagName: 'ARTICLE', childNodes: [], textContent: paragraphWithNestedText.textContent };
+  const nodes = [paragraphWithNestedText, paragraphWithSplitText, wrapper];
+  const context = {
+    Node: { TEXT_NODE: 3 },
+    NodeFilter: { SHOW_ELEMENT: 1, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 },
+    shouldSkipNode: () => false,
+    document: {
+      createTreeWalker(root, type, filter) {
+        const accepted = nodes.filter(node => filter.acceptNode(node) === 1);
+        let index = 0;
+        return { nextNode: () => accepted[index++] || null };
+      }
+    }
+  };
+  const discovery = section('  function findTextContainers(', '  function getTextContent(');
+  vm.runInNewContext(discovery + '\nthis.find = findTextContainers;', context);
+  const found = context.find({});
+  assert.equal(found.length, 2);
+  assert.equal(found[0], paragraphWithNestedText);
+  assert.equal(found[1], paragraphWithSplitText);
+});
+
 test('word matching escapes metacharacters and respects Unicode boundaries', () => {
   const context = {};
   vm.runInNewContext(matcher + '\nthis.match = (text, word) => targetWordPattern(word).test(text);', context);
@@ -23,6 +60,40 @@ test('word matching escapes metacharacters and respects Unicode boundaries', () 
   assert.equal(context.match('cat\u0301', 'cat'), false);
   assert.equal(context.match('use cc++ today', 'cc++'), true);
   assert.equal(context.match('这是中文词汇', '中文词'), true);
+});
+
+test('stacked replacement content treats translation text as plain text', () => {
+  const context = {
+    document: {
+      createElement: () => ({ className: '', textContent: '' })
+    }
+  };
+  const renderer = section('  function renderReplacementContent(', '  function applyReplacements(');
+  vm.runInNewContext(renderer + '\nthis.render = renderReplacementContent;', context);
+  const wrapper = {
+    children: [],
+    replaceChildren() { this.children = []; },
+    appendChild(child) { this.children.push(child); }
+  };
+  context.render(wrapper, '<img src=x onerror=alert(1)>', '<svg onload=alert(1)>', 'translation-stacked');
+  assert.deepEqual(wrapper.children.map(child => [child.className, child.textContent]), [
+    ['vocabmeld-word', '<svg onload=alert(1)>'],
+    ['vocabmeld-original', '<img src=x onerror=alert(1)>']
+  ]);
+});
+
+test('tooltip placement stays within the viewport and moves above a lower-edge anchor', () => {
+  const positioner = section('  function getTooltipPosition(', '  function showTooltip(');
+  const context = {};
+  vm.runInNewContext(positioner + '\nthis.position = getTooltipPosition;', context);
+  const position = context.position(
+    { left: 290, top: 170, bottom: 190 },
+    { width: 180, height: 100 },
+    320,
+    200
+  );
+  assert.equal(position.left, 132);
+  assert.equal(position.top, 62);
 });
 
 test('replacement skips partial and translated words and can replace all occurrences', () => {
@@ -122,11 +193,12 @@ test('learned metacharacter words are filtered and processing marks are cleared 
     };
   }
   const eligible = container('The cc++ language and 中文词 appear in this sufficiently long paragraph about programming.');
+  const shortParagraph = container('This paragraph is short, but should still be processed.');
   const tooShort = container('short text');
   const batches = [];
   const context = {
     config: { learnedWords: [{ original: 'cc++' }, { original: '中文词' }] },
-    pendingContainers: new Set([eligible, tooShort]), processedFingerprints: new Set(),
+    pendingContainers: new Set([eligible, shortParagraph, tooShort]), processedFingerprints: new Set(),
     MAX_SEGMENTS_PER_BATCH: 10, MAX_SEGMENTS_PER_REQUEST: 5, REQUEST_INTERVAL_MS: 0,
     debounce: fn => fn, getTextContent: element => element.text, isCodeText: () => false,
     getElementPath: () => 'p', generateFingerprint: text => text,
@@ -137,6 +209,8 @@ test('learned metacharacter words are filtered and processing marks are cleared 
     '\nthis.process = processPendingContainers;', context);
   await context.process();
   assert.doesNotMatch(batches[0][0].filteredText, /cc\+\+|中文词/i);
+  assert.equal(batches[0].length, 2);
+  assert.equal(batches[0][1].element, shortParagraph);
   assert.equal(eligible.hasAttribute('data-vocabmeld-processing'), false);
   assert.equal(tooShort.hasAttribute('data-vocabmeld-processing'), false);
   context.pendingContainers.add(eligible);
