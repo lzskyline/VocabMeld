@@ -57,6 +57,8 @@
 2. Choose a preset service (DeepSeek recommended) or custom configuration
 3. Enter your API key and test the connection
 
+Configuration exports omit API keys by default. Re-enter them after importing, or explicitly include them and keep the backup secure.
+
 ### Supported API Services
 
 | Provider | Endpoint | Example Model |
