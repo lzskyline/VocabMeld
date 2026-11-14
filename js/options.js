@@ -193,7 +193,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportApiKeys: document.getElementById('exportApiKeys'),
     exportWords: document.getElementById('exportWords'),
     exportStats: document.getElementById('exportStats'),
-    exportCache: document.getElementById('exportCache')
+    exportCache: document.getElementById('exportCache'),
+    webdavUrl: document.getElementById('webdavUrl'),
+    webdavUsername: document.getElementById('webdavUsername'),
+    webdavPassword: document.getElementById('webdavPassword'),
+    webdavUpload: document.getElementById('webdavUpload'),
+    webdavRestore: document.getElementById('webdavRestore')
   };
 
   // ============ 内置主题配置 ============
@@ -1178,7 +1183,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         showGlobalToast('连接成功', 'success');
       } else {
         elements.testEndpointResult.innerHTML = '<span class="test-icon error">✗</span>';
-        showGlobalToast(response?.message || '连接失败', 'error');
+        const message = response?.status === 403
+          ? `${response.message}。若服务限制跨域来源，请在服务端允许 ${chrome.runtime.getURL('').replace(/\/$/, '')}；也请检查密钥权限。`
+          : response?.message || chrome.runtime.lastError?.message || '连接失败';
+        elements.testEndpointResult.textContent = message;
+        elements.testEndpointResult.className = 'test-result error';
+        showGlobalToast(message, 'error');
       }
     });
   }
@@ -2132,15 +2142,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // 导出数据
-    elements.exportDataBtn.addEventListener('click', async () => {
+    async function collectBackupData() {
       const exportData = {
         version: '1.0',
         exportDate: new Date().toISOString()
       };
 
       // 获取 sync 存储的数据
-      const syncData = await new Promise(resolve => chrome.storage.sync.get(null, resolve));
+      const syncData = await chrome.storage.sync.get(null);
       
       // 根据勾选项添加数据
       if (elements.exportSettings.checked) {
@@ -2163,6 +2172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           difficultyLevel: syncData.difficultyLevel,
           difficultyRange: syncData.difficultyRange,
           intensity: syncData.intensity,
+          processMode: syncData.processMode,
           autoProcess: syncData.autoProcess,
           showPhonetic: syncData.showPhonetic,
           dictionaryType: syncData.dictionaryType,
@@ -2170,6 +2180,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           cacheMaxSize: syncData.cacheMaxSize,
           translationStyle: syncData.translationStyle,
           theme: syncData.theme,
+          colorTheme: syncData.colorTheme,
+          customTheme: syncData.customTheme,
+          customizedThemes: syncData.customizedThemes,
           ttsVoice: syncData.ttsVoice,
           ttsRate: syncData.ttsRate,
           siteMode: syncData.siteMode,
@@ -2180,7 +2193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       if (elements.exportWords.checked) {
         // 词汇列表存储在 local 中
-        const localWords = await new Promise(resolve => chrome.storage.local.get(['learnedWords', 'memorizeList'], resolve));
+        const localWords = await chrome.storage.local.get(['learnedWords', 'memorizeList']);
         exportData.learnedWords = localWords.learnedWords || [];
         exportData.memorizeList = localWords.memorizeList || [];
       }
@@ -2196,18 +2209,138 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       
       if (elements.exportCache.checked) {
-        const localData = await new Promise(resolve => chrome.storage.local.get('vocabmeld_word_cache', resolve));
+        const localData = await chrome.storage.local.get('vocabmeld_word_cache');
         exportData.cache = localData.vocabmeld_word_cache || [];
       }
 
-      // 下载文件
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `vocabmeld-backup-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (!elements.exportSettings.checked && !elements.exportWords.checked &&
+          !elements.exportStats.checked && !elements.exportCache.checked) {
+        throw new Error('请至少选择一项备份内容');
+      }
+      return exportData;
+    }
+
+    // 导出数据
+    elements.exportDataBtn.addEventListener('click', async () => {
+      try {
+        const exportData = await collectBackupData();
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vocabmeld-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        showGlobalToast(`导出失败：${error.message}`, 'error');
+      }
+    });
+
+    async function restoreBackupData(data) {
+      if (!data || typeof data !== 'object' || Array.isArray(data) ||
+          typeof data.version !== 'string' || !data.version ||
+          !['settings', 'learnedWords', 'memorizeList', 'stats', 'cache'].some(key => key in data)) {
+        throw new Error('无效的备份文件');
+      }
+      if ((data.settings && (typeof data.settings !== 'object' || Array.isArray(data.settings))) ||
+          (data.stats && (typeof data.stats !== 'object' || Array.isArray(data.stats))) ||
+          ['learnedWords', 'memorizeList', 'cache'].some(key => key in data && !Array.isArray(data[key]))) {
+        throw new Error('备份数据格式不正确');
+      }
+      if ((data.settings?.apiEndpoints && !Array.isArray(data.settings.apiEndpoints)) ||
+          (data.learnedWords && data.learnedWords.some(item => typeof item?.original !== 'string')) ||
+          (data.memorizeList && data.memorizeList.some(item => typeof item?.word !== 'string'))) {
+        throw new Error('备份数据格式不正确');
+      }
+      const syncUpdates = {};
+      const localUpdates = {};
+      const settingsKeys = [
+        'apiEndpoints', 'apiEndpoint', 'apiKey', 'modelName', 'apiConfigs', 'currentApiConfig',
+        'nativeLanguage', 'targetLanguage', 'difficultyLevel', 'difficultyRange', 'intensity',
+        'processMode', 'autoProcess', 'showPhonetic', 'dictionaryType', 'showAddMemorize',
+        'cacheMaxSize', 'translationStyle', 'theme', 'colorTheme', 'customTheme', 'customizedThemes',
+        'ttsVoice', 'ttsRate', 'siteMode', 'excludedSites', 'allowedSites'
+      ];
+      const statsKeys = ['totalWords', 'todayWords', 'lastResetDate', 'cacheHits', 'cacheMisses'];
+      for (const key of settingsKeys) {
+        if (Object.hasOwn(data.settings || {}, key)) syncUpdates[key] = data.settings[key];
+      }
+      for (const key of statsKeys) {
+        if (Object.hasOwn(data.stats || {}, key)) syncUpdates[key] = data.stats[key];
+      }
+      if (data.learnedWords) localUpdates.learnedWords = data.learnedWords;
+      if (data.memorizeList) localUpdates.memorizeList = data.memorizeList;
+      if (data.cache) {
+        const seenKeys = new Set();
+        localUpdates.vocabmeld_word_cache = data.cache.filter(item => {
+          if (!item?.key || seenKeys.has(item.key)) return false;
+          seenKeys.add(item.key);
+          return true;
+        });
+      }
+      if (Object.keys(syncUpdates).length > 0) await chrome.storage.sync.set(syncUpdates);
+      if (Object.keys(localUpdates).length > 0) await chrome.storage.local.set(localUpdates);
+    }
+
+    async function webdavRequest(method, body) {
+      const url = new URL(elements.webdavUrl.value.trim());
+      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash ||
+          url.pathname.endsWith('/')) {
+        throw new Error('请输入不含凭据、查询参数或片段的 HTTPS 备份文件地址');
+      }
+      const username = elements.webdavUsername.value;
+      const password = elements.webdavPassword.value;
+      if (!username || !password || username.includes(':')) {
+        throw new Error('请输入 WebDAV 用户名和密码（用户名不能包含冒号）');
+      }
+      const bytes = new TextEncoder().encode(`${username}:${password}`);
+      const authorization = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
+      const response = await fetch(url.href, {
+        method,
+        headers: {
+          Authorization: `Basic ${authorization}`,
+          ...(body ? { 'Content-Type': 'application/json; charset=utf-8' } : {})
+        },
+        body,
+        credentials: 'omit',
+        redirect: 'error',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer'
+      });
+      if (!response.ok) throw new Error(`WebDAV 请求失败：HTTP ${response.status}`);
+      return response;
+    }
+
+    elements.webdavUpload.addEventListener('click', async () => {
+      if (!confirm('上传会覆盖该地址已有的备份，确定继续吗？')) return;
+      elements.webdavUpload.disabled = true;
+      try {
+        const data = await collectBackupData();
+        await webdavRequest('PUT', JSON.stringify(data));
+        showGlobalToast('WebDAV 备份成功', 'success');
+      } catch (error) {
+        showGlobalToast(`WebDAV 备份失败：${error.message}`, 'error');
+      } finally {
+        elements.webdavUpload.disabled = false;
+      }
+    });
+
+    elements.webdavRestore.addEventListener('click', async () => {
+      if (!confirm('恢复将覆盖备份中包含的本地数据，确定继续吗？')) return;
+      elements.webdavRestore.disabled = true;
+      try {
+        const response = await webdavRequest('GET');
+        const blob = await response.blob();
+        if (blob.size > 10 * 1024 * 1024) throw new Error('备份文件超过 10 MB');
+        const data = JSON.parse(await blob.text());
+        await restoreBackupData(data);
+        alert('恢复成功！页面将刷新。');
+        location.reload();
+      } catch (error) {
+        showGlobalToast(`WebDAV 恢复失败：${error.message}`, 'error');
+      } finally {
+        elements.webdavRestore.disabled = false;
+      }
     });
 
     // 导入数据
@@ -2223,52 +2356,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const text = await file.text();
         const data = JSON.parse(text);
 
-        if (!data.version) {
-          alert('无效的备份文件');
-          return;
-        }
-
         if (!confirm('导入将覆盖现有数据，确定继续吗？')) {
           return;
         }
-
-        const syncUpdates = {};
-        const localUpdates = {};
-
-        if (data.settings) {
-          Object.assign(syncUpdates, data.settings);
-        }
-        if (data.learnedWords) {
-          // 词汇列表存储在 local 中
-          localUpdates.learnedWords = data.learnedWords;
-        }
-        if (data.memorizeList) {
-          // 词汇列表存储在 local 中
-          localUpdates.memorizeList = data.memorizeList;
-        }
-        if (data.stats) {
-          Object.assign(syncUpdates, data.stats);
-        }
-        if (data.cache) {
-          // 导入时去重
-          const seenKeys = new Set();
-          const deduplicatedCache = [];
-          for (const item of data.cache) {
-            if (item.key && !seenKeys.has(item.key)) {
-              seenKeys.add(item.key);
-              deduplicatedCache.push(item);
-            }
-          }
-          localUpdates.vocabmeld_word_cache = deduplicatedCache;
-        }
-
-        // 保存数据
-        if (Object.keys(syncUpdates).length > 0) {
-          await new Promise(resolve => chrome.storage.sync.set(syncUpdates, resolve));
-        }
-        if (Object.keys(localUpdates).length > 0) {
-          await new Promise(resolve => chrome.storage.local.set(localUpdates, resolve));
-        }
+        await restoreBackupData(data);
 
         alert('导入成功！页面将刷新。');
         location.reload();

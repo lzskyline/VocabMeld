@@ -568,7 +568,8 @@ async function testApiConnection(endpoint, apiKey, model) {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      const detail = error.error?.message;
+      return { success: false, status: response.status, message: `HTTP ${response.status}${detail ? `: ${detail}` : ''}` };
     }
 
     const data = await response.json();

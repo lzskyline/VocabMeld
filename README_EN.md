@@ -57,7 +57,11 @@
 2. Choose a preset service (DeepSeek recommended) or custom configuration
 3. Enter your API key and test the connection
 
+For an HTTP 403, check API key permissions and, if your provider restricts cross-origin requests (such as Octopus), allow the extension origin shown by the connection test. Other server rules can also cause 403 responses.
+
 Configuration exports omit API keys by default. Re-enter them after importing, or explicitly include them and keep the backup secure.
+
+Under More, manually upload or restore a WebDAV backup using the full HTTPS file URL and credentials. Uploading overwrites the remote file. Credentials are not saved, and the export options also apply to WebDAV backups. Redirects are not supported.
 
 ### Supported API Services
 

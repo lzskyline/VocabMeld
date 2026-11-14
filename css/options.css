@@ -1183,6 +1183,16 @@ input:checked + .toggle-slider:before {
   font-weight: 400;
 }
 
+.webdav-settings {
+  display: grid;
+  gap: 8px;
+  max-width: 600px;
+}
+
+.webdav-settings .export-actions {
+  margin-top: 8px;
+}
+
 /* Cache Selector */
 .cache-selector {
   display: grid;
